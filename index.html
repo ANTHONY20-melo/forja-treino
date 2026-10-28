@@ -41,6 +41,12 @@ h3{font-size:15px}
 .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px}
 .ch-cell{background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:9.5px;padding:4px 0;text-align:center;color:var(--muted)}
 .ch-done{background:linear-gradient(135deg,rgba(255,107,53,.3),rgba(217,46,239,.3));border-color:var(--accent);color:var(--text)}
+.agua-chip{width:26px;height:34px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:inline-block}
+.agua-chip.on{background:linear-gradient(135deg,#2563eb,#38bdf8);border-color:#38bdf8}
+@media print{
+  body>*{display:none !important}
+  #print-area{display:block !important;color:#000;background:#fff;font-size:13px!important;padding:24px!important}
+}
 .stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 8px;text-align:center}
 .stat .num{font-size:24px;font-weight:700;color:var(--accent)}
 .stat .lbl{font-size:11px;color:var(--muted);margin-top:3px}
@@ -151,6 +157,7 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
     <div class="stat"><div class="num" id="st-kcal" style="color:var(--accent)">0</div><div class="lbl">🔥 Kcal</div></div>
   </div>
   <div id="chal-card" class="card"></div>
+  <div class="card" id="agua-card"></div>
   <h2>📅 Plano da semana <span class="sub" id="plan-goal" style="font-size:12px"></span></h2>
   <div id="plan-week" class="card" style="padding:12px 10px"></div>
   <h2>Treinos <span class="sub" id="goal-txt" style="font-size:12px"></span></h2>
@@ -164,6 +171,8 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
   <h2>Todos os treinos</h2>
   <div class="sub" style="margin-bottom:10px">Toque para configurar e iniciar</div>
   <div id="workouts-full"></div>
+  <div id="treinos-extras"></div>
+</div>
   <h2 id="ex-h2">Exercícios do treino</h2>
   <div id="ex-list" class="card"></div>
 </div>
@@ -181,6 +190,7 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
       <div><label>Altura (cm)</label><input id="p-alt" type="number" min="120" max="230" placeholder="175"></div>
       <div><label>Peso (kg)</label><input id="p-peso" type="number" min="30" max="250" step="0.1" placeholder="72.5"></div>
     </div>
+    <label>Meta de peso (kg)</label><input id="p-meta" type="number" min="30" max="250" step="0.1" placeholder="68">
     <label>Objetivo</label>
     <select id="p-goal"><option value="">Selecione</option><option value="perder">Perder peso 🔥</option><option value="massa">Ganhar massa 💪</option><option value="cond">Condicionamento 🏃</option><option value="saude">Saúde geral 🧘</option></select>
     <label>Nível de experiência</label>
@@ -190,6 +200,12 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
     <div class="row-btns" style="margin-top:14px"><button class="btn btn-green" onclick="saveProfile()">💾 Salvar perfil</button></div>
   </div>
   <div id="imc-card" style="display:none"></div>
+  <div class="card">
+    <h3>🔔 Lembrete diário</h3>
+    <div class="sub" style="font-size:12px">Momento preferido do treino</div>
+    <select id="p-hora" onchange="salvarLembrete()"><option value="-1">Desligado</option><option value="6">06h</option><option value="12">12h</option><option value="18">18h</option><option value="20">20h</option></select>
+    <button class="btn btn-primary" style="margin-top:10px" onclick="ativarNotificacoes()">🔓 Autorizar notificações do navegador</button>
+  </div>
   <div id="peso-card" class="card" style="display:none">
     <h3>📈 Evolução do peso</h3>
     <svg id="peso-chart" viewBox="0 0 320 110" style="width:100%;height:auto;margin-top:8px"></svg>
@@ -198,6 +214,32 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
   </div>
   <h2>🏆 Conquistas</h2>
   <div id="conq-list" class="conquis"></div>
+</div>
+
+<!-- CORRIDA -->
+<div id="view-corrida" class="view">
+  <h2>🏃 Corrida com mapa ao vivo</h2>
+  <div class="sub" style="margin-bottom:10px">Ative o GPS, defina partida e destino no mapa e corra com cronômetro.</div>
+  <div id="mapa" style="height:380px;border-radius:14px;border:1px solid var(--border);position:relative;z-index:1"></div>
+  <div id="mapa-aviso" class="sub" style="margin-top:6px;font-size:11.5px">🗺️ O mapa usa internet (OpenStreetMap) · o GPS do celular marca você em tempo real</div>
+  <div class="stat-row" style="margin-top:12px">
+    <div class="stat"><div class="num" id="r-tempo">00:00</div><div class="lbl">⏱ Tempo</div></div>
+    <div class="stat"><div class="num" id="r-dist">0.00</div><div class="lbl">📍 km</div></div>
+    <div class="stat"><div class="num" id="r-pace">—</div><div class="lbl">⚡ min/km</div></div>
+    <div class="stat"><div class="num" id="r-kcal" style="color:var(--accent)">0</div><div class="lbl">🔥 kcal</div></div>
+  </div>
+  <div class="row-btns">
+    <button class="btn btn-ghost" id="r-gps" onclick="ativarGPS()">📍 Ativar GPS</button>
+    <button class="btn btn-ghost" id="r-par" onclick="defPartida()" disabled>🅰 Partida</button>
+  </div>
+  <div class="row-btns">
+    <button class="btn btn-ghost" id="r-des" onclick="armarDestino()" disabled>🅱 Destino (toque no mapa)</button>
+    <button class="btn btn-green" id="r-cor" onclick="correr()" disabled>▶ Correr</button>
+  </div>
+  <div class="sub" id="r-status" style="text-align:center;margin-top:8px;font-size:13px">Aguardando GPS…</div>
+  <button class="btn btn-danger" style="margin-top:10px" onclick="encerrarCorrida()" id="r-enc" disabled>🏁 Encerrar corrida</button>
+  <h2>Histórico de corridas</h2>
+  <div id="run-list" class="card"></div>
 </div>
 
 <!-- HISTÓRICO -->
@@ -233,9 +275,10 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
   <button class="btn btn-danger" style="margin-top:10px" onclick="stopPlayer(true)">Encerrar treino</button>
 </div>
 
-<div class="nav">
+  <div class="nav">
   <button class="active" data-v="home" onclick="go('home')"><span class="ico">🏠</span>Início</button>
   <button data-v="treinos" onclick="go('treinos')"><span class="ico">💪</span>Treinos</button>
+  <button data-v="corrida" onclick="go('corrida')"><span class="ico">🏃</span>Corrida</button>
   <button data-v="perfil" onclick="go('perfil')"><span class="ico">👤</span>Perfil</button>
   <button data-v="hist" onclick="go('hist')"><span class="ico">📊</span>Histórico</button>
 </div>
@@ -254,6 +297,11 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
     <button class="btn btn-primary" style="margin-top:10px" onclick="document.getElementById('demo-modal').classList.remove('open')">Fechar</button>
   </div>
 </div>
+
+<div id="print-area" style="display:none"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
 <script>
 'use strict';
@@ -386,6 +434,7 @@ function load(){
   if(!d)d={};
   if(!d.history)d.history=[];if(!d.unlocked)d.unlocked=[];if(!d.profile)d.profile={};if(!d.weights)d.weights=[];if(!d.chal)d.chal={start:null,done:{}};
   if(d.chal&&!d.chal.done)d.chal.done={};
+  if(!d.runs)d.runs=[];if(!d.agua)d.agua={};if(!d.reps)d.reps=[];if(!d.remind)d.remind={on:false,hour:-1};
   return d
 }
 function save(){localStorage.setItem(KEY,JSON.stringify(state))}
@@ -441,6 +490,8 @@ function renderPeso(){
   cardEl.style.display='block';
   var WL=320,WH=100,padT=8,padB=14;
   var kgs=ws.map(function(w){return w.kg}).sort(function(a,b){return a-b});
+  var meta=state.profile.meta||0;
+  if(meta){kgs.push(meta)}
   var mn=kgs[0]-2,mx=kgs[kgs.length-1]+2;if(mx-mn<4){var mid=(mx+mn)/2;mn=mid-2;mx=mid+2}
   var pts=ws.map(function(w,i){
     var x=ws.length===1?WL/2:padT+ i*(WL-2*padT)/(ws.length-1);
@@ -454,23 +505,34 @@ function renderPeso(){
       (last?'<text x="'+Math.min(WL-38,p[0]-16)+'" y="'+(p[1]-8)+'" fill="#fff" font-size="13" font-weight="700">'+p[2].kg+' kg</text>':'');
   });
   var defs='<defs><linearGradient id="gg1" x1="0" x2="1"><stop offset="0" stop-color="#ff6b35"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>';
+  var metaLine='';
+  if(meta){
+    var yMeta=WH-padB-((meta-mn)/(mx-mn))*(WH-padT-padB);
+    metaLine='<line x1="20" x2="'+(WL-10)+'" y1="'+yMeta+'" y2="'+yMeta+'" stroke="#fbbf24" stroke-width="2" stroke-dasharray="6 5"/>'+
+     '<text x="'+(WL-52)+'" y="'+(yMeta-4)+'" fill="#fbbf24" font-size="10">meta '+meta+' kg</text>';
+  }
   document.getElementById('peso-chart').innerHTML=defs+
+   metaLine+
    '<polyline points="'+line+'" fill="none" stroke="url(#gg1)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'+dots;
   var span=ws.length>=2?fmtBrasil(ws[0].date)+' → '+fmtBrasil(ws[ws.length-1].date):fmtBrasil(ws[0].date);
   var delta=ws.length>=2?(ws[ws.length-1].kg-ws[0].kg):0;
   var deltaTxt=ws.length>=2?(' ('+(delta>=0?'+':'')+delta.toFixed(1)+' kg)'):'';
-  document.getElementById('peso-lista').innerHTML='<b style="color:var(--accent2)">'+span+deltaTxt+'</b> · '+ws.length+' registro(s)';
+  var etaTxt='';
+  if(meta&&ws.length>=2){
+    var dias=Math.max(1,Math.round((new Date(ws[ws.length-1].date)-new Date(ws[0].date))/86400000));
+    var ritmo=(ws[ws.length-1].kg-ws[0].kg)/dias; // kg/dia
+    var resto=meta-ws[ws.length-1].kg;
+    if(Math.abs(ritmo)>0.02 && ((ritmo<0&&resto<0)||(ritmo>0&&resto>0))) {
+      var diasPrev=Math.ceil(Math.abs(resto/ritmo));
+      etaTxt=' · alcança a meta em ~'+(diasPrev>=7?Math.round(diasPrev/7)+' semana(s)':diasPrev+' dia(s)');
+    } else if(resto>0&&ritmo<=0){etaTxt=' · seu ritmo está estagnado para a meta ↑ ajuste treinos/dieta'}
+  }
+  document.getElementById('peso-lista').innerHTML='<b style="color:var(--accent2)">'+span+deltaTxt+'</b> · '+ws.length+' registro(s)'+etaTxt;
 }
 
 /* ================== NAVEGAÇÃO ================== */
-function go(v){
-  document.querySelectorAll('.view').forEach(function(el){el.classList.remove('active')});
-  document.querySelectorAll('.nav button').forEach(function(b){b.classList.toggle('active',b.dataset.v===v)});
-  document.getElementById('view-'+v).classList.add('active');
-  window.scrollTo(0,0);
-}
+/* go() moderna está abaixo (com hook da aba Corrida) */
 
-/* ================== HOME / LISTAS ================== */
 function renderWorkouts(target){
   var el=document.getElementById(target);el.innerHTML='';
   var rec=GOAL_REC[state.profile.goal]||[];
@@ -533,6 +595,22 @@ function updateStreak(){
 }
 
 /* ================== PERFIL ================== */
+function tmbHTML(p){
+  if(!p.peso||!p.alt||!p.idade)return '';
+  var bmr;
+  if(p.sexo==='F')bmr=10*p.peso+6.25*p.alt-5*p.idade-161;
+  else if(p.sexo==='M')bmr=10*p.peso+6.25*p.alt-5*p.idade+5;
+  else bmr=10*p.peso+6.25*p.alt-5*p.idade-78;
+  bmr=Math.round(bmr);
+  var tdee=Math.round(bmr*1.35); // rotina leve (sedentário a leve)
+  var alvo=tdee;
+  var foco='manutenção';
+  if(p.goal==='perder'){alvo=tdee-500;foco='déficit calórico (-500/dia ≈ -2 kg/mês)'}
+  else if(p.goal==='massa'){alvo=tdee+300;foco='superávit (+300/dia)'}
+  return '<div class="kv"><span>🍳 Metabolismo basal (TMB)</span><b>'+bmr+' kcal</b></div>'+
+   '<div class="kv"><span>⚡ Gasto diário (TDEE)</span><b>'+tdee+' kcal</b></div>'+
+   '<div class="kv"><span>🎯 Alvo do seu objetivo</span><b>'+(foco==='manutenção'?alvo+' kcal':alvo+' kcal · '+foco)+'</b></div>';
+}
 function fillProfileForm(){
   var p=state.profile;
   document.getElementById('p-nome').value=p.nome||'';
@@ -540,6 +618,7 @@ function fillProfileForm(){
   document.getElementById('p-sexo').value=p.sexo||'';
   document.getElementById('p-alt').value=p.alt||'';
   document.getElementById('p-peso').value=p.peso||'';
+  document.getElementById('p-meta').value=p.meta||'';
   document.getElementById('p-goal').value=p.goal||'';
   document.getElementById('p-nivel').value=p.nivel||'';
   document.getElementById('p-bio').value=p.bio||'';
@@ -552,6 +631,7 @@ function saveProfile(){
     sexo:document.getElementById('p-sexo').value,
     alt:parseFloat(document.getElementById('p-alt').value)||0,
     peso:parseFloat(document.getElementById('p-peso').value)||0,
+    meta:parseFloat(document.getElementById('p-meta').value)||0,
     goal:document.getElementById('p-goal').value,
     nivel:document.getElementById('p-nivel').value,
     bio:document.getElementById('p-bio').value
@@ -589,7 +669,9 @@ function renderIMC(){
    '<div class="kv"><span>Objetivo</span><b>'+(p.goal||'—')+'</b></div>'+
    '<div class="kv"><span>Nível</span><b>'+(p.nivel||'—')+'</b></div>'+
    '<div class="kv"><span>Biotipo</span><b>'+(p.bio||'—')+'</b></div>'+
-   '<div class="kv"><span>💧 Água/dia sugerida</span><b>'+agua+' L</b></div>';
+   '<div class="kv"><span>💧 Água/dia sugerida</span><b>'+agua+' L</b></div>'+
+   tmbHTML(p)+
+   '<div class="row-btns" style="margin-top:10px"><button class="btn btn-primary" onclick="exportarPDF()">📄 Exportar ficha (PDF)</button></div>';
 }
 
 /* ================== SETUP ================== */
@@ -605,9 +687,9 @@ function startSetup(id){
    '<button class="btn btn-green" onclick="beginPlayer()">▶ Iniciar treino</button>'+
    '<div class="row-btns"><button class="btn btn-ghost" onclick="backAll()">← Voltar</button></div>'+
    '<h2>Exercícios (toque para ver a demonstração)</h2><div id="ex-list" class="card"></div>';
-  renderPreview();renderExList();go('treinos');
+  renderExtras();renderPreview();renderExList();go('treinos');
 }
-function backAll(){renderWorkouts('workouts-full');go('treinos');document.getElementById('ex-list').innerHTML='';}
+function backAll(){renderWorkouts('workouts-full');renderExtras();go('treinos');document.getElementById('ex-list').innerHTML='';}
 function selSets(v){setupSets=parseInt(v,10)||1;renderPreview()}
 function buildSteps(){
   var steps=[{type:'prep',t:10,ex:null}];
@@ -802,8 +884,290 @@ function toast(msg,ms){
   clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove('show')},ms||2600);
 }
 
-/* ================== INIT ================== */
-fillProfileForm();
+/* ================== TIMER LIVRE (TABATA CUSTOM) ================== */
+function renderExtras(){
+  var el=document.getElementById('treinos-extras');if(!el)return;
+  el.innerHTML='<h2>⏱ Treino livre (você monta o Tabata)</h2>'+
+  '<div class="card"><div class="grid2">'+
+   '<div><label>Preparo (s)</label><input id="f-prep" type="number" value="10" min="0"></div>'+
+   '<div><label>Esforço (s)</label><input id="f-work" type="number" value="40" min="5"></div>'+
+   '<div><label>Descanso (s)</label><input id="f-rest" type="number" value="20" min="0"></div>'+
+   '<div><label>Rodadas</label><input id="f-rounds" type="number" value="8" min="1" max="30"></div>'+
+  '</div><button class="btn btn-primary" style="margin-top:12px" onclick="startFreeTimer()">▶ Iniciar ciclo livre</button></div>'+
+  '<h2>🏋️ Rep máximas (teste de força)</h2>'+
+  '<div class="card">'+
+   '<label>Exercício</label><select id="rm-ex">'+WORKOUTS.map(function(w){return w.ex.map(function(e,i){return'<option value="'+(w.id+'|'+i)+'">'+w.nome+' · '+e.n+'</option>'}).join('')}).join('')+'</select>'+
+   '<div class="row-btns">'+
+    '<button class="btn btn-ghost" id="rm-cron" onclick="rmStart()">⏱ Começar</button>'+
+    '<button class="btn btn-primary" id="rm-add" onclick="rmAdd()" disabled>＋1 rep</button>'+
+   '</div>'+
+   '<div class="timer-big" id="rm-time" style="font-size:40px">00:00</div>'+
+   '<button class="btn btn-green" style="margin-top:8px" id="rm-stop" onclick="rmStop()" disabled>💾 Salvar teste</button>'+
+   '<div id="rm-list" class="sub" style="margin-top:10px"></div>'+
+  '</div>';
+  renderRmList();
+}
+function startFreeTimer(){
+  var prep=parseInt(document.getElementById('f-prep').value,10)||10;
+  var work=parseInt(document.getElementById('f-work').value,10)||40;
+  var rest=parseInt(document.getElementById('f-rest').value,10)||20;
+  var rounds=parseInt(document.getElementById('f-rounds').value,10)||8;
+  var ex=[];for(var i=1;i<=rounds;i++)ex.push({n:'Rodada '+i,d:'Intensidade constante, ritmo seu',s:work,r:rest});
+  setupW={id:'free',nome:'Treino Livre '+work+'/'+rest+'×'+rounds,emoji:'⏱',nivel:'Livre',dur:Math.ceil((prep+rounds*(work+rest))/60),tags:['livre'],ex:ex};
+  setupSets=1;
+  var el=document.getElementById('view-treinos');
+  el.innerHTML='<h2>⏱ '+setupW.nome+'</h2><div class="card"><div class="sub">'+rounds+' rodadas · '+work+'s esforço / '+rest+'s descanso · ~'+setupW.dur+' min</div></div>'+
+   '<button class="btn btn-green" onclick="beginPlayer()">▶ Começar</button>';
+  go('treinos');
+}
+/* ================== REP MÁXIMAS ================== */
+var RM={run:false,len:0,exName:'',startT:0,tick:null};
+function rmStart(){
+  var sel=document.getElementById('rm-ex').value.split('|');
+  var w=WORKOUTS.find(function(x){return x.id===sel[0]});
+  RM.exName=w?w.ex[parseInt(sel[1],10)].n:'Exercício';
+  RM.len=0;RM.run=true;RM.startT=Date.now();
+  document.getElementById('rm-add').disabled=false;
+  document.getElementById('rm-stop').disabled=false;
+  document.getElementById('rm-cron').disabled=true;
+  RM.tick=setInterval(function(){
+    var s=Math.floor((Date.now()-RM.startT)/1000);
+    document.getElementById('rm-time').textContent=fmtTimer(s);
+  },500);
+  beep(1);
+}
+function rmAdd(){if(RM.run){RM.len++;beep(1,true)}}
+function rmStop(){
+  if(!RM.run)return;
+  RM.run=false;clearInterval(RM.tick);
+  document.getElementById('rm-add').disabled=true;
+  document.getElementById('rm-stop').disabled=true;
+  document.getElementById('rm-cron').disabled=false;
+  var secs=Math.floor((Date.now()-RM.startT)/1000);
+  if(RM.len>0){
+    state.reps.push({date:fmtDate(new Date()),ex:RM.exName,reps:RM.len,seg:secs});
+    if(state.reps.length>200)state.reps=state.reps.slice(-200);
+    save();toast('🏆 '+RM.exName+': '+RM.len+' reps em '+fmtTimer(secs));
+  }
+  renderRmList();rmResetClock();
+}
+function rmResetClock(){document.getElementById('rm-time').textContent='00:00'}
+function renderRmList(){
+  var el=document.getElementById('rm-list');if(!el)return;
+  var best={};
+  state.reps.forEach(function(r){if(!best[r.ex]||r.reps>best[r.ex].reps)best[r.ex]=r});
+  var keys=Object.keys(best);
+  if(!keys.length){el.innerHTML='Sem testes ainda. Comece o cronômetro, batuce '+'＋1'+' rep por repetição e salve';return}
+  el.innerHTML=keys.map(function(k){return '• <b>'+esc(k)+'</b>: '+best[k].reps+' reps ('+fmtTimer(best[k].seg)+') — '+fmtBrasil(best[k].date)}).join('<br>');
+}
+
+/* ================== HIDRATAÇÃO ================== */
+function renderAgua(){
+  var el=document.getElementById('agua-card');if(!el)return;
+  var peso=state.profile.peso||70;
+  var mlTotal=Math.round(peso*35);
+  var metaVasos=Math.max(6,Math.ceil(mlTotal/250));
+  var hojeKey=fmtDate(new Date());
+  if(state.agua.date!==hojeKey){state.agua={date:hojeKey,vasos:0};save()}
+  var done=state.agua.vasos||0;
+  var chips='';for(var i=0;i<metaVasos;i++)chips+='<span class="agua-chip'+(i<done?' on':'')+'"></span>';
+  var pct=Math.round(100*done/metaVasos);
+  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><h3>💧 Hidratação</h3><b style="color:#38bdf8">'+done+'/'+metaVasos+' vasos (250ml)</b></div>'+
+   '<div class="sub" style="font-size:12px;margin-top:2px">Meta: '+mlTotal+' ml ('+peso+' kg × 35 ml) · '+pct+'%</div>'+
+   '<div class="sub" style="margin-top:10px">'+chips+'</div>'+
+   '<button class="btn btn-primary" style="margin-top:12px" onclick="aguaTake()">🚰 +1 vaso</button>';
+}
+function aguaTake(){
+  var key=fmtDate(new Date());
+  if(state.agua.date!==key){state.agua={date:key,vasos:0}}
+  state.agua.vasos=(state.agua.vasos||0)+1;save();renderAgua();beep(1);
+  var peso=state.profile.peso||70;
+  if(state.agua.vasos>=Math.max(6,Math.ceil(peso*35/250)))toast('💦 Meta de hidratação completa!',3000);
+}
+
+/* ================== LEMBRETE / NOTIFICAÇÃO ================== */
+function fillProfileFormExtra(){document.getElementById('p-hora').value=String(state.remind.hour)}
+function salvarLembrete(){
+  state.remind.hour=parseInt(document.getElementById('p-hora').value,10);save();
+  toast(state.remind.hour<0?'🔕 Lembrete desligado':'🔔 Vou lembrar você às '+('0'+state.remind.hour).slice(-2)+'h se faltar treinar');
+  checkReminder(true);
+}
+function ativarNotificacoes(){
+  if(!('Notification' in window)){toast('⚠️ Seu navegador não suporta notificações');return}
+  Notification.requestPermission().then(function(p){
+    if(p==='granted'){state.remind.on=true;save();toast('✅ Notificações autorizadas!')}
+    else toast('🔕 Permissão negada pelo navegador');
+  });
+}
+function checkReminder(force){
+  var h=state.remind.hour;
+  if(!h||h<0)return;
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  var now=new Date(),key=fmtDate(now);
+  if(now.getHours()<h&&!force)return;
+  if(state.notified===key)return;
+  if(todayWorkoutDone())return;
+  var pl=planSemanal();
+  var dia=pl.dias[(now.getDay()===0?6:now.getDay()-1)];
+  if(dia==='rest')return;
+  var nome=pl.nomes[dia];
+  try{
+    new Notification('🔥 FORJA — hora de treinar!',{body:'Hoje é dia de '+nome+'! Bora queimar calorias.'});
+    state.notified=key;save();
+  }catch(e){}
+}
+function todayWorkoutDone(){
+  var key=fmtDate(new Date());
+  return state.history.some(function(h){return h.date===key});
+}
+setInterval(function(){try{checkReminder()}catch(e){}},60000);
+
+/* ================== EXPORTAR PDF (FICHA) ================== */
+function exportarPDF(){
+  var p=state.profile;
+  var rows=state.history.slice(-10).reverse().map(function(h){return '<tr><td>'+fmtBrasil(h.date)+'</td><td>'+esc(h.nome)+'</td><td>'+h.min+' min</td><td>'+(h.kcal?h.kcal+' kcal':'—')+'</td></tr>'}).join('');
+  var runsRows=(state.runs||[]).slice(-5).reverse().map(function(r){return '<tr><td>'+fmtBrasil(r.date)+'</td><td>'+r.dist+' km</td><td>'+fmtTimer(r.time||r.segs||0)+'</td><td>'+(r.kcal?r.kcal+' kcal':'—')+'</td></tr>'}).join('');
+  document.getElementById('print-area').innerHTML=
+   '<h2 style="margin-bottom:2px">🔥 FORJA — Ficha do Aluno</h2>'+
+   '<div style="color:#555;margin-bottom:14px">Gerada em '+fmtBrasil(fmtDate(new Date()))+'</div>'+
+   '<h3>Perfil</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse">'+
+   [['Nome',p.nome||'—'],['Idade',(p.idade||'—')],['Sexo',p.sexo||'—'],['Altura',(p.alt?p.alt+' cm':'—')],['Peso atual',(p.peso?p.peso+' kg':'—')],['Meta',(p.meta?p.meta+' kg':'—')],['Objetivo',p.goal||'—'],['Nível',p.nivel||'—'],['Biotipo',p.bio||'—'],['IMC',(p.peso&&p.alt?(p.peso/Math.pow(p.alt/100,2)).toFixed(2):'—')],['Total treinos',String(state.history.length)],['Total minutos',String(state.totalMin||0)],['Kcal queimadas',String(state.kcalTotal||0)]].map(function(kv){return '<tr><td>'+kv[0]+'</td><td>'+kv[1]+'</td></tr>'}).join('')+'</table>'+
+   '<h3 style="margin-top:14px">Últimas sessões</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse"><tr><th>Data</th><th>Treino</th><th>Duração</th><th>Calorias</th></tr>'+(rows||'<tr><td colspan="4">sem sessões</td></tr>')+'</table>'+
+   '<h3 style="margin-top:14px">Corridas recentes</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse"><tr><th>Data</th><th>Distância</th><th>Tempo</th><th>Calorias</th></tr>'+(runsRows||'<tr><td colspan="4">sem corridas registradas</td></tr>')+'</table>';
+  setTimeout(function(){window.print()},120);
+}
+
+/* ================== CORRIDA GPS ================== */
+var RK={map:null,uMarker:null,aMarker:null,bMarker:null,line:null,route:[],watch:null,lastFix:null,
+        from:null,dest:null,destArmed:false,run:false,t0:0,elapsed:0,timer:null,dist:0};
+function haversine(a,b){
+  var R=6371000,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180;
+  var s=Math.sin(dLat/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function initCorrida(){
+  if(RK.map)return;
+  if(typeof L==='undefined'){document.getElementById('mapa-aviso').innerHTML='⚠️ Mapa indisponível (sem internet). GPS e cronômetro continuam funcionando.';ativarGPS(false);return}
+  RK.map=L.map('mapa').setView([-15.78,-47.87],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(RK.map);
+  RK.map.on('click',function(e){if(RK.destArmed)setDestino([e.latlng.lat,e.latlng.lng])});
+  ativarGPS(false);
+}
+function ativarGPS(bag){
+  var btn=document.getElementById('r-gps');
+  if(RK.watch){btn.textContent='📍 GPS ativo';return}
+  if(!navigator.geolocation){document.getElementById('r-status').textContent='⚠️ Seu navegador não tem GPS/geolocalização';return}
+  document.getElementById('r-status').textContent='🔎 Buscando sinal GPS…';
+  RK.watch=navigator.geolocation.watchPosition(onFix,onGpsErr,{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
+  btn.textContent='📍 GPS ativo';
+}
+function onGpsErr(){
+  document.getElementById('r-status').innerHTML='⚠️ Sem sinal GPS. Dicas: saia do prédio, autorize Localização, abra por <b>https://</b> (Vercel ✔, arquivo local ✖)';
+}
+function onFix(pos){
+  var o=[pos.coords.latitude,pos.coords.longitude];
+  RK.lastFix=o;
+  document.getElementById('mapa-aviso').innerHTML='🗺️ Precisão: '+Math.round(pos.coords.accuracy)+' m'+(pos.coords.speed?' · '+Math.round(pos.coords.speed*3.6)+' km/h':'');
+  if(!RK.uMarker){
+    RK.uMarker=L.circleMarker(o,{radius:7,color:'#38bdf8',fillColor:'#38bdf8',fillOpacity:.9}).addTo(RK.map);
+  }else RK.uMarker.setLatLng(o);
+  if(!RK.bMarker)RK.map.setView(o,16);
+  document.getElementById('r-par').disabled=false;
+  document.getElementById('r-des').disabled=false;
+  document.getElementById('r-status').textContent='📡 GPS pronto! Marque 🅰 partida e 🅱 destino.';
+  if(RK.route.length&&RK.run)RK.line.setLatLngs(RK.route.concat([o]));
+}
+function defPartida(){
+  if(!RK.lastFix){document.getElementById('r-status').textContent='⚠️ Esperando GPS…';return}
+  RK.from=RK.lastFix;
+  if(!RK.aMarker)RK.aMarker=L.marker(RK.from,{title:'Partida'}).addTo(RK.map);
+  else RK.aMarker.setLatLng(RK.from);
+  document.getElementById('r-par').disabled=false;
+  document.getElementById('r-status').textContent='🅰 Partida marcada! Toque no mapa para marcar o destino 🅱.';
+  beep(1);
+}
+function armarDestino(){
+  RK.destArmed=!RK.destArmed;
+  document.getElementById('r-des').style.borderColor=RK.destArmed?'var(--accent)':'';
+  document.getElementById('r-status').textContent=RK.destArmed?'🅱 Toque no mapa no local de chegada':'🅱 Destino (toque no mapa)';
+}
+function setDestino(o){
+  RK.dest=o;RK.destArmed=false;
+  document.getElementById('r-des').style.borderColor='';
+  if(!RK.bMarker)RK.bMarker=L.marker(o,{title:'Destino'}).addTo(RK.map);
+  else RK.bMarker.setLatLng(o);
+  document.getElementById('r-status').textContent='🅱 Destino marcado · pronto para correr!';
+  document.getElementById('r-cor').disabled=false;
+  L.polyline([RK.from,o],{color:'#ff6b35',dashArray:'6 6'}).addTo(RK.map);
+  beep(2);
+}
+function correr(){
+  RK.route=[];RK.dist=0;RK.elapsed=0;RK.run=true;RK.t0=Date.now();
+  RK.line=L.polyline([RK.from],{color:'#ff6b35',weight:5}).addTo(RK.map);
+  document.getElementById('r-cor').disabled=true;
+  document.getElementById('r-des').disabled=true;
+  document.getElementById('r-enc').disabled=false;
+  RK.timer=setInterval(rTick,1000);
+  rChime();
+  document.getElementById('r-status').textContent='🏃 Correndo! Siga para o destino 🅱 (realtime).';
+}
+function rTick(){
+  var s=Math.floor((Date.now()-RK.t0)/1000)+RK.elapsed;
+  document.getElementById('r-tempo').textContent=fmtTimer(s);
+  document.getElementById('r-dist').textContent=(RK.dist/1000).toFixed(2);
+  document.getElementById('r-pace').textContent=RK.dist>15?fmtPace(s,RK.dist):'—';
+  var peso=state.profile.peso||70;
+  document.getElementById('r-kcal').textContent=Math.round(9.8*3.5*peso/200*(s/60));
+}
+function fmtPace(segs,metros){
+  var secPerKm=segs/(metros/1000);
+  var m=Math.floor(secPerKm/60),s2=Math.round(secPerKm%60);if(s2===60){s2=0;m++}
+  return m+"'"+('0'+s2).slice(-2);
+}
+function rChime(){beep(2)}
+function encerrarCorrida(){
+  RK.run=false;clearInterval(RK.timer);
+  var s=Math.floor((Date.now()-RK.t0)/1000);
+  var peso=state.profile.peso||70;
+  var mins=Math.max(1,Math.round(s/60));
+  var kcal=Math.round(9.8*3.5*peso/200*mins);
+  if(RK.dist>10||s>60){
+    state.runs.push({date:fmtDate(new Date()),dist:+(RK.dist/1000).toFixed(2),time:s,min:mins,kcal:kcal});
+    state.kcalTotal=(state.kcalTotal||0)+kcal;
+    state.totalMin=(state.totalMin||0)+mins;
+    if(state.chal&&state.chal.start)challengeMark();
+    updateStreak();checkConquistas();save();
+    toast('🏁 Corrida: '+(RK.dist/1000).toFixed(2)+' km · '+fmtTimer(s)+' · 🔥 '+kcal+' kcal',3600);
+  } else toast('Corrida muito curta para registrar.');
+  renderHome();renderRuns();corridaReset();
+}
+function corridaReset(){
+  document.getElementById('r-tempo').textContent='00:00';
+  document.getElementById('r-dist').textContent='0.00';
+  document.getElementById('r-pace').textContent='—';
+  document.getElementById('r-kcal').textContent='0';
+  document.getElementById('r-cor').disabled=!RK.dest;
+  document.getElementById('r-des').disabled=false;
+  document.getElementById('r-enc').disabled=true;
+  document.getElementById('r-status').textContent='Partida e destino continuam marcados · correr de novo?';
+}
+function renderRuns(){
+  var el=document.getElementById('run-list');if(!el)return;
+  if(!state.runs.length){el.innerHTML='<div class="empty"><span class="ico">🏃</span>Nenhuma corrida ainda. Ative o GPS e marque partida/destino!</div>';return}
+  el.innerHTML=state.runs.slice().reverse().map(function(r){
+    return '<div class="hist-item"><div><b>'+(r.dist)+' km</b> · '+fmtTimer(r.time)+'<div class="sub">'+fmtBrasil(r.date)+' · '+r.min+' min · 🔥 '+r.kcal+' kcal</div></div><div style="font-size:20px">🏃</div></div>';
+  }).join('');
+}
+
+/* BACK: init + go listener */
+function go(v){
+  document.querySelectorAll('.view').forEach(function(el){el.classList.remove('active')});
+  document.querySelectorAll('.nav button').forEach(function(b){b.classList.toggle('active',b.dataset.v===v)});
+  document.getElementById('view-'+v).classList.add('active');
+  window.scrollTo(0,0);
+  if(v==='corrida'){initCorrida();renderRuns()}
+}
+fillProfileForm();fillProfileFormExtra();renderExtras();
 renderWorkouts('workouts-list');
 renderWorkouts('workouts-full');
 renderHome();renderHist();renderConq();
