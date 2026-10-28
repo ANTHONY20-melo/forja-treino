@@ -222,6 +222,7 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
   <div class="sub" style="margin-bottom:10px">Ative o GPS, defina partida e destino no mapa e corra com cronômetro.</div>
   <div id="mapa" style="height:380px;border-radius:14px;border:1px solid var(--border);position:relative;z-index:1"></div>
   <div id="mapa-aviso" class="sub" style="margin-top:6px;font-size:11.5px">🗺️ O mapa usa internet (OpenStreetMap) · o GPS do celular marca você em tempo real</div>
+  <div id="r-nav" class="card" style="display:none;margin-top:10px"></div>
   <div class="stat-row" style="margin-top:12px">
     <div class="stat"><div class="num" id="r-tempo">00:00</div><div class="lbl">⏱ Tempo</div></div>
     <div class="stat"><div class="num" id="r-dist">0.00</div><div class="lbl">📍 km</div></div>
@@ -1089,6 +1090,14 @@ function onFix(pos){
     var d=haversine(prev,o);
     if(d>3){RK.route.push(o);RK.dist+=d;if(RK.line)RK.line.setLatLngs(RK.route)}
   }
+  rTryNav(o);
+}
+function rTryNav(o){
+  if(!RK.run)return;
+  try{
+    if(NAV.pts.length){rNavUpdate();offRouteCheck()}
+    else if(NAV.failed&&RK.dest)document.getElementById('r-nav').innerHTML='<div style="text-align:center">📴 Rota em linha reta · <b>'+fmtDist(Math.max(0,haversine(o,RK.dest)))+'</b> até 🅱</div>';
+  }catch(e){}
 }
 function recentrar(){if(RK.lastFix&&RK.map){RK.map.setView(RK.lastFix,17);document.getElementById('r-status').textContent='🎯 Recentrado na sua posição atual.'}}
 function reorigem(){
@@ -1098,6 +1107,7 @@ function reorigem(){
   if(!RK.aMarker)RK.aMarker=L.marker(RK.lastFix,{title:'Partida'}).addTo(RK.map);else RK.aMarker.setLatLng(RK.lastFix);
   if(RK.line)RK.line.setLatLngs([RK.lastFix]);
   document.getElementById('r-status').textContent='↩ Origem movida para aqui! Cronômetro continua rodando.';
+  if(RK.dest)calcularRota(RK.lastFix,RK.dest);
   beep(1);
 }
 function defPartida(){
@@ -1119,10 +1129,107 @@ function setDestino(o){
   document.getElementById('r-des').style.borderColor='';
   if(!RK.bMarker)RK.bMarker=L.marker(o,{title:'Destino'}).addTo(RK.map);
   else RK.bMarker.setLatLng(o);
-  document.getElementById('r-status').textContent='🅱 Destino marcado · pronto para correr!';
+  document.getElementById('r-status').textContent='🅱 Destino marcado · buscando rota pelas ruas…';
   document.getElementById('r-cor').disabled=false;
   L.polyline([RK.from,o],{color:'#ff6b35',dashArray:'6 6'}).addTo(RK.map);
+  calcularRota((RK.run&&RK.lastFix)?RK.lastFix:RK.from,o);
   beep(2);
+}
+/* ---------- AUTOFETCH: rota real pelas ruas (OSRM) + navegação guiada -------- */
+var NAV={pts:[],steps:[],total:0,traveled:0,stepIdx:0,lastCalc:0,offT:0,fetching:false,failed:false};
+function instPT(m){
+  if(!m)return '⬆️ Siga em frente';
+  var t=m.type,mod=m.modifier||'';
+  if(t==='depart')return '🚀 Comece a corrida';
+  if(t==='arrive')return '🏁 Você chegou ao destino!';
+  var map={left:'⬅️ Vire à esquerda',right:'➡️ Vire à direita',slight_left:'↖️ Leve à esquerda',slight_right:'↗️ Leve à direita',sharp_left:'⬅️↩ Vire forte à esquerda',sharp_right:'↪️↩ Vire forte à direita','uturn':'🔁 Faça o retorno',straight:'⬆️ Siga em frente'};
+  if(t==='roundabout')return '🔄 Entrada da rotatória' + (map[mod]? ' · '+map[mod].split(' ')[1]:'');
+  return map[mod]||'⬆️ Siga em frente';
+}
+function fmtDist(m){return m>=1000?(m/1000).toFixed(1)+' km':Math.round(m)+' m'}
+function drawNavLine(ptsArr,color){
+  if(RK.line&&RK.map)RK.map.removeLayer(RK.line);
+  RK.line=L.polyline(ptsArr,{color:color,weight:6}).addTo(RK.map);
+}
+async function calcularRota(from,to){
+  NAV.fetching=true;NAV.failed=false;
+  try{
+    var url='https://router.project-osrm.org/route/v1/foot/'+from[1]+','+from[0]+';'+to[1]+','+to[0]+'?overview=full&geometries=geojson&steps=true';
+    var r=await fetch(url);
+    var j=await r.json();
+    var rt=(j&&j.routes&&j.routes[0]);
+    if(!rt)throw new Error('sem rota');
+    NAV.pts=rt.geometry.coordinates.map(function(c){return[c[1],c[0]]});
+    NAV.total=rt.distance;NAV.traveled=0;NAV.stepIdx=0;
+    NAV.steps=[];
+    var leg=rt.legs[0],cum=0;
+    leg.steps.forEach(function(st){
+      NAV.steps.push({inst:instPT(st.maneuver),dist:st.distance,cum:cum,loc:[st.maneuver.location[1],st.maneuver.location[0]]});
+      cum+=st.distance;
+    });
+    NAV.lastCalc=Date.now();
+    drawNavLine(NAV.pts,'#22c55e');
+    var doc=document.getElementById('r-nav');
+    doc.style.display='block';
+    doc.innerHTML='<div style="text-align:center"><b style="color:#22c55e">🧭 Rota real carregada</b> · '+fmtDist(NAV.total)+' de caminhada/corrida · '+Math.round(rt.duration/60)+' min est.</div>';
+    beep(1);
+  }catch(e){
+    NAV.failed=true;NAV.pts=[];NAV.fallback=true;
+    var doc=document.getElementById('r-nav');
+    doc.style.display='block';
+    doc.innerHTML='<div style="text-align:center"><b>📴 Sem internet para rota real</b> · navegação em linha reta (distância euclidiana)</div>';
+  }
+}
+function cumOnRoute(o){
+  if(!NAV.pts.length)return null;
+  var bestd=1e12,besti=0,bestT=0,precum=0,cum=0;
+  for(var i=0;i<NAV.pts.length-1;i++){
+    var a=NAV.pts[i],b=NAV.pts[i+1];
+    var abx=b[0]-a[0],aby=b[1]-a[1];
+    var apx=o[0]-a[0],apy=o[1]-a[1];
+    var len2=abx*abx+aby*aby;
+    var t=len2>0?Math.max(0,Math.min(1,(apx*abx+apy*aby)/len2)):0;
+    var px=a[0]+t*abx,py=a[1]+t*aby;
+    var dx=o[0]-px,dy=o[1]-py;
+    var dist=dx*dx+dy*dy;
+    if(dist<bestd){bestd=dist;besti=i;bestT=t;precum=cum}
+    cum+=haversine(a,b);
+  }
+  var segLen=haversine(NAV.pts[besti],NAV.pts[besti+1]);
+  var perpM=haversine([NAV.pts[besti][0]+bestT*(NAV.pts[besti+1][0]-NAV.pts[besti][0]),NAV.pts[besti][1]+bestT*(NAV.pts[besti+1][1]-NAV.pts[besti][1])],o);
+  return{perp:perpM,before:precum+bestT*segLen};
+}
+function rNavUpdate(){
+  var els=document.getElementById('r-nav');
+  if(!els)return;
+  if(NAV.failed){els.innerHTML='<div style="text-align:center">📴 Rota em linha reta · <b>'+fmtDist(Math.max(0,(RK.from&&RK.dest)?haversine(RK.dest,RK.lastFix||RK.from):0))+'</b> até 🅱</div>';return}
+  var proj=cumOnRoute(RK.lastFix||[]);
+  if(!proj)return;
+  NAV.traveled=proj.before;
+  var rest=NAV.total-NAV.traveled;
+  if(rest<25){els.innerHTML='<div style="text-align:center;font-size:18px">🏁 <b>Você chegou!</b></div>';beep(3);return}
+  var st=null;
+  for(var i=0;i<NAV.steps.length;i++){var s=NAV.steps[i];if(s.cum+s.dist>NAV.traveled){st=s;break}}
+  var remNext=st?(st.cum+st.dist)-NAV.traveled:rest;
+  var prevTxt=els.dataset.prev||'';
+  var txt=st?st.inst:'⬆️ Siga em frente';
+  if(txt!==prevTxt){
+    els.dataset.prev=txt;
+    if(RK.run&&prevTxt!==''&&st){beep(1,true);if(navigator.vibrate)try{navigator.vibrate(180)}catch(e){}}
+  }
+  els.innerHTML='<div class="player-wrap" style="gap:10px"><div style="font-size:30px">'+(st?st.inst.split(' ')[0]:'⬆️')+'</div><div style="flex:1"><b style="font-size:15.5px">'+(st?st.inst.slice(st.inst.indexOf(' ')+1):'Siga em frente')+'</b><div class="sub" style="font-size:12px">em '+fmtDist(remNext)+'</div></div><div style="text-align:right"><b style="color:var(--accent);font-size:17px">'+fmtDist(rest)+'</b><div class="sub" style="font-size:11px">restantes 🅱</div></div></div>';
+}
+function offRouteCheck(){
+  if(!NAV.pts.length||NAV.fetching||NAV.failed)return;
+  if(Date.now()-NAV.lastCalc<25000)return;
+  var proj=cumOnRoute(RK.lastFix||[]);
+  if(!proj)return;
+  if(proj.perp>50){NAV.offT+=3;}else NAV.offT=0;
+  if(NAV.offT>=9&&RK.from&&RK.dest){
+    NAV.offT=0;NAV.lastCalc=Date.now();
+    calcularRota(RK.lastFix,RK.dest);
+    toast('🔄 Você saiu da rota — recalculando pelas ruas…',2800);
+  }
 }
 function correr(){
   RK.route=[];RK.dist=0;RK.elapsed=0;RK.run=true;RK.t0=Date.now();
