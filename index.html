@@ -199,6 +199,15 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
     <select id="p-bio"><option value="">Selecione</option><option>Ectomorfo (magro)</option><option>Mesomorfo (atlético)</option><option>Endomorfo (robusto)</option></select>
     <div class="row-btns" style="margin-top:14px"><button class="btn btn-green" onclick="saveProfile()">💾 Salvar perfil</button></div>
   </div>
+  <div class="card">
+    <h3>💾 Backup dos seus dados</h3>
+    <div class="sub" style="font-size:12px">Seus dados são salvos automaticamente no aparelho (último: <b id="bk-when">—</b>). Exporte o arquivo para trocar de celular/PC ou se limparem o navegador.</div>
+    <div class="row-btns" style="margin-top:12px">
+      <button class="btn btn-primary" onclick="exportarBackup()">⬇ Exportar backup</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('bk-file').click()">⬆ Restaurar arquivo</button>
+    </div>
+    <input id="bk-file" type="file" accept=".json,application/json" onchange="importarBackup(event)" style="display:none">
+  </div>
   <div id="imc-card" style="display:none"></div>
   <div class="card">
     <h3>🔔 Lembrete diário</h3>
@@ -436,10 +445,20 @@ const CONQUISTAS=[
 
 /* ================== ESTADO ================== */
 var KEY='forja_v3';
+var KEY_MIRROR='forja_v3_mirror'; // cópia redundante declarada ANTES do load (evita hoisting bug)
 var state=load();
 function load(){
-  var d;try{d=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-  if(!d){try{d=JSON.parse(localStorage.getItem('ultron_treino_v2'))}catch(e){}} // migração do app anterior
+  var d;
+  try{d=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+  if(!d||!((d.history&&Array.isArray(d.history))||(d.profile&&typeof d.profile==='object'))){
+    try{d=JSON.parse(localStorage.getItem(KEY_MIRROR))}catch(e){}
+    if(d&&((d.history&&Array.isArray(d.history))||(d.profile&&typeof d.profile==='object'))){
+      try{localStorage.setItem(KEY,JSON.stringify(d))}catch(e){} // auto-reparo silencioso
+    }
+  }
+  if(!d||!((d.history&&Array.isArray(d.history))||(d.profile&&typeof d.profile==='object'))){
+    try{d=JSON.parse(localStorage.getItem('ultron_treino_v2'))}catch(e){} // migração do app anterior
+  }
   if(!d)d={};
   if(!d.history)d.history=[];if(!d.unlocked)d.unlocked=[];if(!d.profile)d.profile={};if(!d.weights)d.weights=[];if(!d.chal)d.chal={start:null,done:{}};
   if(d.chal&&!d.chal.done)d.chal.done={};
@@ -601,6 +620,49 @@ function updateStreak(){
   var y=new Date();y.setDate(y.getDate()-1);
   state.streak=(state.lastDate===fmtDate(y))?(state.streak||0)+1:1;
   state.lastDate=today;
+}
+
+/* ================== BACKUP / RECUPERAÇÃO ================== */
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}
+  try{localStorage.setItem(KEY_MIRROR,JSON.stringify(state));localStorage.setItem('forja_saved_at',String(Date.now()))}catch(e){}
+}
+function backupInfo(){
+  var t=parseInt(localStorage.getItem('forja_saved_at'),10);
+  if(!t)return 'nunca';
+  var mins=Math.floor((Date.now()-t)/60000);
+  if(mins<1)return 'agora mesmo';
+  if(mins<60)return 'há '+mins+' min';
+  var h=Math.floor(mins/60);
+  return 'há '+h+'h'+('0'+(mins%60)).slice(-2)+'m';
+}
+function exportarBackup(){
+  var blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='forja-backup-'+fmtDate(new Date())+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(a.href)},4000);
+  toast('💾 Backup salvo em Downloads! Guarde o arquivo.',3400);
+  beep(1);
+}
+function importarBackup(ev){
+  var file=ev.target.files&&ev.target.files[0];
+  if(!file)return;
+  var fr=new FileReader();
+  fr.onload=function(){
+    try{
+      var d=JSON.parse(fr.result);
+      if(!((d.history&&Array.isArray(d.history))||(d.profile&&typeof d.profile==='object')))throw new Error('formato inválido');
+      d.chal=d.chal||{start:null,done:{}};d.chal.done=d.chal.done||{};
+      d.weights=d.weights||[];d.runs=d.runs||[];d.agua=d.agua||{};d.reps=d.reps||[];
+      d.unlocked=d.unlocked||[];d.remind=d.remind||{on:false,hour:-1};
+      state=d;save();
+      location.reload();
+    }catch(e){toast('⚠️ Arquivo inválido: '+e.message,3600)}
+  };
+  fr.readAsText(file);
+  ev.target.value='';
 }
 
 /* ================== PERFIL ================== */
@@ -1344,8 +1406,11 @@ function go(v){
   document.getElementById('view-'+v).classList.add('active');
   window.scrollTo(0,0);
   if(v==='corrida'){initCorrida();renderRuns()}
+  var bw=document.getElementById('bk-when');
+  if(bw)bw.textContent=backupInfo();
 }
 fillProfileForm();fillProfileFormExtra();renderExtras();
+document.getElementById('bk-when').textContent=backupInfo();
 renderWorkouts('workouts-list');
 renderWorkouts('workouts-full');
 renderHome();renderHist();renderConq();
