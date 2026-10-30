@@ -215,28 +215,27 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
 
 <!-- CORRIDA -->
 <div id="view-corrida" class="view">
-  <h2>🏃 Corrida com mapa ao vivo</h2>
-  <div class="sub" style="margin-bottom:10px">Ative o GPS, defina partida e destino no mapa e corra com cronômetro.</div>
+  <h2>🏃 Corrida ao vivo</h2>
+  <div class="sub" style="margin-bottom:10px">O GPS liga automaticamente: aperte ▶ Iniciar e ao terminar toque 🏁 Encerrar para ver seu percurso, minutos e calorias.</div>
   <div id="mapa" style="height:380px;border-radius:14px;border:1px solid var(--border);position:relative;z-index:1"></div>
   <div id="mapa-aviso" class="sub" style="margin-top:6px;font-size:11.5px">🗺️ O mapa usa internet (OpenStreetMap) · o GPS do celular marca você em tempo real</div>
-  <div id="r-nav" class="card" style="display:none;margin-top:10px"></div>
   <div class="stat-row" style="margin-top:12px">
-    <div class="stat"><div class="num" id="r-tempo">00:00</div><div class="lbl">⏱ Tempo</div></div>
+    <div class="stat"><div class="num" id="r-tempo">00:00</div><div class="lbl">⏱ Minutos</div></div>
     <div class="stat"><div class="num" id="r-dist">0.00</div><div class="lbl">📍 km</div></div>
     <div class="stat"><div class="num" id="r-pace">—</div><div class="lbl">⚡ min/km</div></div>
     <div class="stat"><div class="num" id="r-kcal" style="color:var(--accent)">0</div><div class="lbl">🔥 kcal</div></div>
   </div>
-  <div class="row-btns">
-    <button class="btn btn-ghost" id="r-gps" onclick="ativarGPS()">📍 Ativar GPS</button>
-    <button class="btn btn-ghost" id="r-par" onclick="defPartida()" disabled>🅰 Partida</button>
+  <div class="stat-row" style="grid-template-columns:1fr 1fr;display:none" id="r-hr-row">
+    <div class="stat st-hr"><div class="num" id="r-bpm">—</div><div class="lbl">❤ BPM ao vivo</div></div>
+    <div class="stat"><div class="num" id="r-hrsrc" style="font-size:15px">⌚</div><div class="lbl">Relógio conectado</div></div>
+  </div>
+  <div class="row-btns" style="margin-top:12px">
+    <button class="btn btn-green" id="r-cor" onclick="correr()" disabled>▶ Iniciar corrida</button>
   </div>
   <div class="row-btns">
-    <button class="btn btn-ghost" id="r-recen" onclick="recentrar()">🎯 Focar no GPS</button>
-    <button class="btn btn-ghost" id="r-re" onclick="armarDestino()" disabled>🅱 Mudar destino</button>
-  </div>
-  <div class="row-btns" style="margin-top:8px">
-    <button class="btn btn-ghost" id="r-orig" onclick="reorigem()" disabled>↩ Mudar origem p/ aqui</button>
-    <button class="btn btn-green" id="r-cor" onclick="correr()" disabled>▶ Correr</button>
+    <button class="btn btn-ghost" id="r-gps" onclick="ativarGPS(true)">📍 GPS</button>
+    <button class="btn btn-ghost" id="r-recen" onclick="recentrar()">🎯 Focar</button>
+    <button class="btn btn-ghost" id="r-wat" onclick="conectarRelogio()">⌚ Relógio</button>
   </div>
   <div class="sub" id="r-status" style="text-align:center;margin-top:8px;font-size:13px">Aguardando GPS…</div>
   <button class="btn btn-danger" style="margin-top:10px" onclick="encerrarCorrida()" id="r-enc" disabled>🏁 Encerrar corrida</button>
@@ -290,6 +289,17 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
 </div>
 
 <div id="toast" class="toast"></div>
+
+<!-- MODAL RESUMO DA CORRIDA -->
+<div id="run-sum" class="r-sum" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="card">
+    <div class="rs-hero">🏁</div>
+    <h3 style="text-align:center;font-size:18px">Corrida concluída! 🎉</h3>
+    <div class="r-grid" id="rs-grid"></div>
+    <div class="rs-note" id="rs-note"></div>
+    <button class="btn btn-primary" style="margin-top:12px" onclick="fecharResumo()">🗺️ Fechar e ver o percurso</button>
+  </div>
+</div>
 
 <!-- MODAL DEMO -->
 <div id="demo-modal" class="demo-modal" onclick="closeDemo(event)">
@@ -1136,7 +1146,19 @@ function salvarSessao(mins,exCount){
   if(state.chal&&state.chal.start)challengeMark();
   updateStreak();checkConquistas();save();
   toast('✅ '+mins+' min · 🔥 '+kcal+' kcal · streak '+state.streak+' 🔥',3200);
-  renderHome();renderHist();renderConq();
+renderHome();renderHist();renderConq();
+
+/* ===== PWA: instalação + offline ===== */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').catch(function(){});
+}
+var toastPwa=document.getElementById('view-home');
+var deferredPrompt=null;
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault();
+  deferredPrompt=e;
+});
+window.addEventListener('appinstalled',function(){deferredPrompt=null});
 }
 function finishWorkout(){
   clearInterval(P.tick);
@@ -1333,209 +1355,92 @@ function exportarPDF(){
 }
 
 /* ================== CORRIDA GPS ================== */
-var RK={map:null,uMarker:null,aMarker:null,bMarker:null,line:null,route:[],watch:null,lastFix:null,
-        from:null,dest:null,destArmed:false,run:false,t0:0,elapsed:0,timer:null,dist:0};
+/* Fluxo novo: só ▶ Iniciar (GPS automático) → rota real gravada → 🏁 Encerrar → resumo com percurso/min/kcal.
+   Smartwatch: BPM ao vivo via Bluetooth (serviço padrão heart_rate — Web Bluetooth). */
+var RK={map:null,uMarker:null,aMarker:null,line:null,route:[],watch:null,lastFix:null,seenFix:false,
+        run:false,t0:0,timer:null,dist:0,hr:[],btDev:null,hrChar:null};
 function haversine(a,b){
   var R=6371000,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180;
   var s=Math.sin(dLat/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLon/2)**2;
   return 2*R*Math.asin(Math.sqrt(s));
 }
+function hrAvg(){
+  if(!RK.hr.length)return 0;
+  var s=0;RK.hr.forEach(function(x){s+=x.hr});
+  return Math.round(s/RK.hr.length);
+}
+function hrMax(){var m=0;RK.hr.forEach(function(x){if(x.hr>m)m=x.hr});return m}
+/* kcal: fórmula Keytel com BPM quando há relógio; senão MET de corrida (9.8) */
+function kcalCorrida(segs,hAvg){
+  var peso=state.profile.peso||70,idade=state.profile.idade||28,sex=state.profile.sexo||'M';
+  var mins=Math.max(1,segs)/60;
+  if(hAvg&&hAvg>=60){
+    var c=sex==='F'?(-20.4022+0.4472*hAvg-0.1263*peso+0.074*idade)
+                  :(-55.0969+0.6309*hAvg+0.1988*peso+0.2017*idade);
+    var perMin=c/4.184;
+    if(isFinite(perMin)&&perMin>0)return Math.round(perMin*mins);
+  }
+  return Math.round(9.8*3.5*peso/200*mins);
+}
 function initCorrida(){
-  if(RK.map)return;
+  if(RK.map){ativarGPS(false);return}
   if(typeof L==='undefined'){document.getElementById('mapa-aviso').innerHTML='⚠️ Mapa indisponível (sem internet). GPS e cronômetro continuam funcionando.';ativarGPS(false);return}
   RK.map=L.map('mapa').setView([-15.78,-47.87],13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(RK.map);
-  RK.map.on('click',function(e){if(RK.destArmed)setDestino([e.latlng.lat,e.latlng.lng])});
   ativarGPS(false);
 }
-function ativarGPS(bag){
+function ativarGPS(manual){
   var btn=document.getElementById('r-gps');
   if(RK.watch){btn.textContent='📍 GPS ativo';return}
   if(!navigator.geolocation){document.getElementById('r-status').textContent='⚠️ Seu navegador não tem GPS/geolocalização';return}
   document.getElementById('r-status').textContent='🔎 Buscando sinal GPS…';
+  btn.textContent='📍 Buscando GPS…';
   RK.watch=navigator.geolocation.watchPosition(onFix,onGpsErr,{enableHighAccuracy:true,maximumAge:2000,timeout:15000});
   btn.textContent='📍 GPS ativo';
 }
 function onGpsErr(){
   document.getElementById('r-status').innerHTML='⚠️ Sem sinal GPS. Dicas: saia do prédio, autorize Localização, abra por <b>https://</b> (Vercel ✔, arquivo local ✖)';
+  document.getElementById('r-gps').textContent='📍 Religar GPS';
+  RK.watch=null;
 }
 function onFix(pos){
   var o=[pos.coords.latitude,pos.coords.longitude];
   RK.lastFix=o;
   document.getElementById('mapa-aviso').innerHTML='🗺️ Precisão: '+Math.round(pos.coords.accuracy)+' m'+(pos.coords.speed?' · '+Math.round(pos.coords.speed*3.6)+' km/h':'');
-  if(!RK.uMarker){
-    RK.uMarker=L.circleMarker(o,{radius:7,color:'#38bdf8',fillColor:'#38bdf8',fillOpacity:.9}).addTo(RK.map);
-  }else RK.uMarker.setLatLng(o);
-  if(!RK.bMarker)RK.map.setView(o,16);
-  document.getElementById('r-par').disabled=false;
-  document.getElementById('r-re').disabled=false;
-  document.getElementById('r-orig').disabled=false;
-  if(!document.getElementById('r-status').textContent.includes('GPS pronto'))document.getElementById('r-status').textContent='📡 GPS pronto! Marque 🅰 partida e 🅱 destino.';
-  if(RK.run){
-    var prev=RK.route.length?RK.route[RK.route.length-1]:(RK.from||o);
+  if(!RK.uMarker){RK.uMarker=L.circleMarker(o,{radius:7,color:'#38bdf8',fillColor:'#38bdf8',fillOpacity:.9}).addTo(RK.map);}
+  else RK.uMarker.setLatLng(o);
+  if(!RK.aMarker){RK.aMarker=L.circleMarker(o,{radius:6,color:'#22c55e',fillColor:'#22c55e',fillOpacity:.9}).addTo(RK.map);}
+  if(RK.map)RK.map.setView(o,RK.run?RK.map.getZoom():16);
+  if(!RK.run){
+    document.getElementById('r-cor').disabled=false;
+    if(!RK.seenFix){RK.seenFix=true;document.getElementById('r-status').textContent='📡 GPS pronto! Aperte ▶ Iniciar corrida.';beep(1)}
+  }else{
+    var prev=RK.route.length?RK.route[RK.route.length-1]:o;
     var d=haversine(prev,o);
     if(d>3){RK.route.push(o);RK.dist+=d;if(RK.line)RK.line.setLatLngs(RK.route)}
   }
-  rTryNav(o);
-}
-function rTryNav(o){
-  if(!RK.run)return;
-  try{
-    if(NAV.pts.length){rNavUpdate();offRouteCheck()}
-    else if(NAV.failed&&RK.dest)document.getElementById('r-nav').innerHTML='<div style="text-align:center">📴 Rota em linha reta · <b>'+fmtDist(Math.max(0,haversine(o,RK.dest)))+'</b> até 🅱</div>';
-  }catch(e){}
 }
 function recentrar(){if(RK.lastFix&&RK.map){RK.map.setView(RK.lastFix,17);document.getElementById('r-status').textContent='🎯 Recentrado na sua posição atual.'}}
-function reorigem(){
-  if(!RK.lastFix)return;
-  RK.from=RK.lastFix;
-  RK.route=[RK.lastFix];RK.dist=0;
-  if(!RK.aMarker)RK.aMarker=L.marker(RK.lastFix,{title:'Partida'}).addTo(RK.map);else RK.aMarker.setLatLng(RK.lastFix);
-  if(RK.line)RK.line.setLatLngs([RK.lastFix]);
-  document.getElementById('r-status').textContent='↩ Origem movida para aqui! Cronômetro continua rodando.';
-  if(RK.dest)calcularRota(RK.lastFix,RK.dest);
-  beep(1);
-}
-function defPartida(){
-  if(!RK.lastFix){document.getElementById('r-status').textContent='⚠️ Esperando GPS…';return}
-  RK.from=RK.lastFix;
-  if(!RK.aMarker)RK.aMarker=L.marker(RK.from,{title:'Partida'}).addTo(RK.map);
-  else RK.aMarker.setLatLng(RK.from);
-  document.getElementById('r-par').disabled=false;
-  document.getElementById('r-status').textContent='🅰 Partida marcada! Toque no mapa para marcar o destino 🅱.';
-  beep(1);
-}
-function armarDestino(){
-  RK.destArmed=!RK.destArmed;
-  document.getElementById('r-des').style.borderColor=RK.destArmed?'var(--accent)':'';
-  document.getElementById('r-status').textContent=RK.destArmed?'🅱 Toque no mapa no local de chegada':'🅱 Destino (toque no mapa)';
-}
-function setDestino(o){
-  RK.dest=o;RK.destArmed=false;
-  document.getElementById('r-des').style.borderColor='';
-  if(!RK.bMarker)RK.bMarker=L.marker(o,{title:'Destino'}).addTo(RK.map);
-  else RK.bMarker.setLatLng(o);
-  document.getElementById('r-status').textContent='🅱 Destino marcado · buscando rota pelas ruas…';
-  document.getElementById('r-cor').disabled=false;
-  L.polyline([RK.from,o],{color:'#ff6b35',dashArray:'6 6'}).addTo(RK.map);
-  calcularRota((RK.run&&RK.lastFix)?RK.lastFix:RK.from,o);
-  beep(2);
-}
-/* ---------- AUTOFETCH: rota real pelas ruas (OSRM) + navegação guiada -------- */
-var NAV={pts:[],steps:[],total:0,traveled:0,stepIdx:0,lastCalc:0,offT:0,fetching:false,failed:false};
-function instPT(m){
-  if(!m)return '⬆️ Siga em frente';
-  var t=m.type,mod=m.modifier||'';
-  if(t==='depart')return '🚀 Comece a corrida';
-  if(t==='arrive')return '🏁 Você chegou ao destino!';
-  var map={left:'⬅️ Vire à esquerda',right:'➡️ Vire à direita',slight_left:'↖️ Leve à esquerda',slight_right:'↗️ Leve à direita',sharp_left:'⬅️↩ Vire forte à esquerda',sharp_right:'↪️↩ Vire forte à direita','uturn':'🔁 Faça o retorno',straight:'⬆️ Siga em frente'};
-  if(t==='roundabout')return '🔄 Entrada da rotatória' + (map[mod]? ' · '+map[mod].split(' ')[1]:'');
-  return map[mod]||'⬆️ Siga em frente';
-}
-function fmtDist(m){return m>=1000?(m/1000).toFixed(1)+' km':Math.round(m)+' m'}
-function drawNavLine(ptsArr,color){
-  if(RK.line&&RK.map)RK.map.removeLayer(RK.line);
-  RK.line=L.polyline(ptsArr,{color:color,weight:6}).addTo(RK.map);
-}
-async function calcularRota(from,to){
-  NAV.fetching=true;NAV.failed=false;
-  try{
-    var url='https://router.project-osrm.org/route/v1/foot/'+from[1]+','+from[0]+';'+to[1]+','+to[0]+'?overview=full&geometries=geojson&steps=true';
-    var r=await fetch(url);
-    var j=await r.json();
-    var rt=(j&&j.routes&&j.routes[0]);
-    if(!rt)throw new Error('sem rota');
-    NAV.pts=rt.geometry.coordinates.map(function(c){return[c[1],c[0]]});
-    NAV.total=rt.distance;NAV.traveled=0;NAV.stepIdx=0;
-    NAV.steps=[];
-    var leg=rt.legs[0],cum=0;
-    leg.steps.forEach(function(st){
-      NAV.steps.push({inst:instPT(st.maneuver),dist:st.distance,cum:cum,loc:[st.maneuver.location[1],st.maneuver.location[0]]});
-      cum+=st.distance;
-    });
-    NAV.lastCalc=Date.now();
-    drawNavLine(NAV.pts,'#22c55e');
-    var doc=document.getElementById('r-nav');
-    doc.style.display='block';
-    doc.innerHTML='<div style="text-align:center"><b style="color:#22c55e">🧭 Rota real carregada</b> · '+fmtDist(NAV.total)+' de caminhada/corrida · '+Math.round(rt.duration/60)+' min est.</div>';
-    beep(1);
-  }catch(e){
-    NAV.failed=true;NAV.pts=[];NAV.fallback=true;
-    var doc=document.getElementById('r-nav');
-    doc.style.display='block';
-    doc.innerHTML='<div style="text-align:center"><b>📴 Sem internet para rota real</b> · navegação em linha reta (distância euclidiana)</div>';
-  }
-}
-function cumOnRoute(o){
-  if(!NAV.pts.length)return null;
-  var bestd=1e12,besti=0,bestT=0,precum=0,cum=0;
-  for(var i=0;i<NAV.pts.length-1;i++){
-    var a=NAV.pts[i],b=NAV.pts[i+1];
-    var abx=b[0]-a[0],aby=b[1]-a[1];
-    var apx=o[0]-a[0],apy=o[1]-a[1];
-    var len2=abx*abx+aby*aby;
-    var t=len2>0?Math.max(0,Math.min(1,(apx*abx+apy*aby)/len2)):0;
-    var px=a[0]+t*abx,py=a[1]+t*aby;
-    var dx=o[0]-px,dy=o[1]-py;
-    var dist=dx*dx+dy*dy;
-    if(dist<bestd){bestd=dist;besti=i;bestT=t;precum=cum}
-    cum+=haversine(a,b);
-  }
-  var segLen=haversine(NAV.pts[besti],NAV.pts[besti+1]);
-  var perpM=haversine([NAV.pts[besti][0]+bestT*(NAV.pts[besti+1][0]-NAV.pts[besti][0]),NAV.pts[besti][1]+bestT*(NAV.pts[besti+1][1]-NAV.pts[besti][1])],o);
-  return{perp:perpM,before:precum+bestT*segLen};
-}
-function rNavUpdate(){
-  var els=document.getElementById('r-nav');
-  if(!els)return;
-  if(NAV.failed){els.innerHTML='<div style="text-align:center">📴 Rota em linha reta · <b>'+fmtDist(Math.max(0,(RK.from&&RK.dest)?haversine(RK.dest,RK.lastFix||RK.from):0))+'</b> até 🅱</div>';return}
-  var proj=cumOnRoute(RK.lastFix||[]);
-  if(!proj)return;
-  NAV.traveled=proj.before;
-  var rest=NAV.total-NAV.traveled;
-  if(rest<25){els.innerHTML='<div style="text-align:center;font-size:18px">🏁 <b>Você chegou!</b></div>';beep(3);return}
-  var st=null;
-  for(var i=0;i<NAV.steps.length;i++){var s=NAV.steps[i];if(s.cum+s.dist>NAV.traveled){st=s;break}}
-  var remNext=st?(st.cum+st.dist)-NAV.traveled:rest;
-  var prevTxt=els.dataset.prev||'';
-  var txt=st?st.inst:'⬆️ Siga em frente';
-  if(txt!==prevTxt){
-    els.dataset.prev=txt;
-    if(RK.run&&prevTxt!==''&&st){beep(1,true);if(navigator.vibrate)try{navigator.vibrate(180)}catch(e){}}
-  }
-  els.innerHTML='<div class="player-wrap" style="gap:10px"><div style="font-size:30px">'+(st?st.inst.split(' ')[0]:'⬆️')+'</div><div style="flex:1"><b style="font-size:15.5px">'+(st?st.inst.slice(st.inst.indexOf(' ')+1):'Siga em frente')+'</b><div class="sub" style="font-size:12px">em '+fmtDist(remNext)+'</div></div><div style="text-align:right"><b style="color:var(--accent);font-size:17px">'+fmtDist(rest)+'</b><div class="sub" style="font-size:11px">restantes 🅱</div></div></div>';
-}
-function offRouteCheck(){
-  if(!NAV.pts.length||NAV.fetching||NAV.failed)return;
-  if(Date.now()-NAV.lastCalc<25000)return;
-  var proj=cumOnRoute(RK.lastFix||[]);
-  if(!proj)return;
-  if(proj.perp>50){NAV.offT+=3;}else NAV.offT=0;
-  if(NAV.offT>=9&&RK.from&&RK.dest){
-    NAV.offT=0;NAV.lastCalc=Date.now();
-    calcularRota(RK.lastFix,RK.dest);
-    toast('🔄 Você saiu da rota — recalculando pelas ruas…',2800);
-  }
-}
 function correr(){
-  RK.route=[];RK.dist=0;RK.elapsed=0;RK.run=true;RK.t0=Date.now();
-  if(!RK.aMarker)RK.aMarker=L.marker(RK.from,{title:'Partida'}).addTo(RK.map);
-  RK.route=[RK.from];
-  RK.line=L.polyline([RK.from],{color:'#ff6b35',weight:5}).addTo(RK.map);
-  if(RK.dest)RK.aMarker=RK.aMarker||L.marker(RK.from);
+  if(!RK.lastFix){document.getElementById('r-status').textContent='⚠️ Ainda sem sinal GPS… aguarde um instante.';return}
+  RK.route=[];RK.dist=0;RK.run=true;RK.t0=Date.now();RK.hr=[];
+  RK.route=[RK.lastFix];
+  RK.aMarker.setLatLng(RK.lastFix);
+  if(RK.line&&RK.map)RK.map.removeLayer(RK.line);
+  RK.line=L.polyline([RK.lastFix],{color:'#ff6b35',weight:6}).addTo(RK.map);
   document.getElementById('r-cor').disabled=true;
   document.getElementById('r-enc').disabled=false;
   RK.timer=setInterval(rTick,1000);
-  rChime();
-  document.getElementById('r-status').textContent='🏃 Correndo! Siga para o destino 🅱 (realtime). Clique em 🅱 Mudar destino para trocar rota ao vivo.';
+  beep(2);
+  if(navigator.vibrate)try{navigator.vibrate(220)}catch(e){}
+  document.getElementById('r-status').textContent='🏃 Correndo! Seu percurso está sendo gravado pelo GPS.';
 }
 function rTick(){
-  var s=Math.floor((Date.now()-RK.t0)/1000)+RK.elapsed;
+  var s=Math.floor((Date.now()-RK.t0)/1000);
   document.getElementById('r-tempo').textContent=fmtTimer(s);
   document.getElementById('r-dist').textContent=(RK.dist/1000).toFixed(2);
   document.getElementById('r-pace').textContent=RK.dist>15?fmtPace(s,RK.dist):'—';
-  var peso=state.profile.peso||70;
-  document.getElementById('r-kcal').textContent=Math.round(9.8*3.5*peso/200*(s/60));
+  document.getElementById('r-kcal').textContent=kcalCorrida(s,hrAvg());
 }
 function fmtPace(segs,metros){
   var secPerKm=segs/(metros/1000);
@@ -1546,18 +1451,90 @@ function rChime(){beep(2)}
 function encerrarCorrida(){
   RK.run=false;clearInterval(RK.timer);
   var s=Math.floor((Date.now()-RK.t0)/1000);
-  var peso=state.profile.peso||70;
+  var dist=RK.dist;
   var mins=Math.max(1,Math.round(s/60));
-  var kcal=Math.round(9.8*3.5*peso/200*mins);
-  if(RK.dist>10||s>60){
-    state.runs.push({date:fmtDate(new Date()),dist:+(RK.dist/1000).toFixed(2),time:s,min:mins,kcal:kcal,kkm:RK.dist>100?+(kcal/(RK.dist/1000)).toFixed(1):0,pts:decimate(RK.route,120)});
+  var hAvg=hrAvg();
+  var kcal=kcalCorrida(s,hAvg);
+  if(dist>10||s>60){
+    state.runs.push({date:fmtDate(new Date()),dist:+(dist/1000).toFixed(2),time:s,min:mins,kcal:kcal,kkm:dist>100?+(kcal/(dist/1000)).toFixed(1):0,pts:decimate(RK.route,120),bpm:hAvg||0,bpmMax:hrMax()||0});
     state.kcalTotal=(state.kcalTotal||0)+kcal;
     state.totalMin=(state.totalMin||0)+mins;
     if(state.chal&&state.chal.start)challengeMark();
     updateStreak();checkConquistas();save();
-    toast('🏁 Corrida: '+(RK.dist/1000).toFixed(2)+' km · '+fmtTimer(s)+' · 🔥 '+kcal+' kcal'+(RK.dist>100?' ('+(kcal/(RK.dist/1000)).toFixed(1)+' kcal/km)':''),3600);
+    /* desenha o percurso REAL no mapa antes do resumo (fica visível ao fechar) */
+    if(dist>10&&RK.route.length>1&&RK.map){
+      if(RK.line)RK.map.removeLayer(RK.line);
+      RK.line=L.polyline(RK.route,{color:'#a855f7',weight:6}).addTo(RK.map);
+      RK.map.fitBounds(RK.line.getBounds(),{padding:[28,28]});
+    }
+    showRunSummary(s,dist,kcal,hAvg);
+    renderHome();renderRuns();renderKcalWeek();
   } else toast('Corrida muito curta para registrar.');
-  renderHome();renderRuns();renderKcalWeek();corridaReset();
+  corridaReset();
+}
+/* ---------- RESUMO DA CORRIDA (percurso, minutos, kcal, BPM) ---------- */
+function rsCell(v,l,cl){
+  return '<div class="r-cell"><div class="n '+(cl||'')+'">'+v+'</div><div class="l">'+l+'</div></div>';
+}
+function showRunSummary(s,dist,kcal,hAvg){
+  var kmh=dist>10?(dist/1000)/(s/3600):0;
+  var html='';
+  html+=rsCell((dist/1000).toFixed(2)+' km','📍 Distância');
+  html+=rsCell(fmtTimer(s),'⏱ Minutos');
+  if(dist>15)html+=rsCell(fmtPace(s,dist),'⚡ Ritmo médio (min/km)');
+  html+=rsCell(kcal,'🔥 kcal queimadas','ac');
+  if(kmh>0)html+=rsCell(kmh.toFixed(1)+' km/h','🚀 Velocidade média');
+  if(hAvg>=60)html+=rsCell(hAvg+' bpm ('+hrMax()+' máx)','❤ Relógio','hr');
+  document.getElementById('rs-grid').innerHTML=html;
+  document.getElementById('rs-note').textContent='O percurso completo foi desenhado no mapa — feche o resumo para vê-lo na rota roxa.';
+  document.getElementById('run-sum').classList.add('open');
+  beep(3);
+}
+function fecharResumo(){document.getElementById('run-sum').classList.remove('open');beep(1)}
+/* ---------- SMARTWATCH / MONITOR CARDÍACO (Web Bluetooth) ---------- */
+/* Funciona com relógios e cintas que difundem BPM pelo serviço padrão BLE
+   heart_rate (Garmin, Polar, Xiaomi, Amazfit etc. em "broadcast"/modo genérico). */
+function conectarRelogio(){
+  var nat=navigator.bluetooth;
+  if(!nat){
+    toast('⚠️ Web Bluetooth indisponível (Chrome/Android tem · iPhone não). No Apple Watch, grave pelo exercício nativo.',4200);
+    return;
+  }
+  nat.requestDevice({filters:[{services:['heart_rate']}]})
+   .then(function(dev){
+     dev.addEventListener('gattserverdisconnected',function(){
+       document.getElementById('r-wat').textContent='⌚ Relógio';
+       document.getElementById('r-status').textContent='⌚ Relógio desconectado — toque ⌚ Relógio para reconectar.';
+     });
+     document.getElementById('r-wat').textContent='⌚ Conectando…';
+     return dev.gatt.connect().then(function(gatt){
+       return gatt.getPrimaryService('heart_rate').then(function(svc){
+         return svc.getCharacteristic('heart_rate_measurement');
+       });
+     }).then(function(ch){
+       return ch.startNotifications().then(function(){
+         ch.addEventListener('characteristicvaluechanged',function(e){
+           var v=e.target.value;
+           var flags=v.getUint8(0);
+           var hr=flags&1?v.getUint16(1,true):v.getUint8(1);
+           if(hr>30&&hr<230){
+             RK.hr.push({t:Date.now(),hr:hr});
+             document.getElementById('r-hr-row').style.display='grid';
+             document.getElementById('r-bpm').textContent=hr;
+           }
+         });
+         RK.hrChar=ch;RK.btDev=dev;
+         document.getElementById('r-wat').textContent='⌚ Conectado';
+         document.getElementById('r-status').textContent='⌚ Relógio conectado! BPM ao vivo aparece no placar da corrida.';
+         toast('⌚ '+(dev.name||'Relógio')+' conectado (BPM ao vivo)',3200);
+         beep(2);
+       });
+     });
+   })
+   .catch(function(e){
+     toast('⌚ Não foi possível conectar: '+(e&&(e.name||e.message)?(e.message||e.name):'cancelado'),3600);
+     document.getElementById('r-wat').textContent='⌚ Relógio';
+   });
 }
 function verRota(idx){
   var r=state.runs[idx]||state.runs[state.runs.length-1-idx];
@@ -1574,9 +1551,9 @@ function corridaReset(){
   document.getElementById('r-dist').textContent='0.00';
   document.getElementById('r-pace').textContent='—';
   document.getElementById('r-kcal').textContent='0';
-  document.getElementById('r-cor').disabled=!RK.dest;
+  document.getElementById('r-cor').disabled=!RK.lastFix;
   document.getElementById('r-enc').disabled=true;
-  document.getElementById('r-status').textContent='Partida e destino continuam marcados · correr de novo?';
+  document.getElementById('r-status').textContent=RK.lastFix?'Corrida registrada! Pode iniciar outra quando quiser 🏁':'Aguardando GPS…';
 }
 function decimate(arr,max){
   if(arr.length<=max)return arr.map(function(p){return[p[0],p[1]]});
@@ -1615,10 +1592,10 @@ function renderKcalWeek(){
 }
 function renderRuns(){
   var el=document.getElementById('run-list');if(!el)return;
-  if(!state.runs.length){el.innerHTML='<div class="empty"><span class="ico">🏃</span>Nenhuma corrida ainda. Ative o GPS e marque partida/destino!</div>';return}
+  if(!state.runs.length){el.innerHTML='<div class="empty"><span class="ico">🏃</span>Nenhuma corrida ainda. Aperte ▶ Iniciar corrida e registre seu primeiro percurso!</div>';return}
   el.innerHTML=state.runs.slice().reverse().map(function(r,i){
     var idx=state.runs.length-1-i;
-    return '<div class="hist-item"><div><b>'+(r.dist)+' km</b> · '+fmtTimer(r.time)+'<div class="sub">'+fmtBrasil(r.date)+' · '+r.min+' min · 🔥 '+r.kcal+' kcal'+(r.kkm?' ('+r.kkm+' kcal/km)':'')+'</div></div><div><button class="btn btn-ghost" style="width:auto;padding:7px 12px;font-size:12px" onclick="verRota('+idx+')">🗺 rota</button></div></div>';
+    return '<div class="hist-item"><div><b>'+(r.dist)+' km</b> · '+fmtTimer(r.time)+'<div class="sub">'+fmtBrasil(r.date)+' · '+r.min+' min · 🔥 '+r.kcal+' kcal'+(r.bpm?' · ❤ '+r.bpm+' bpm':'')+(r.kkm?' ('+r.kkm+' kcal/km)':'')+'</div></div><div><button class="btn btn-ghost" style="width:auto;padding:7px 12px;font-size:12px" onclick="verRota('+idx+')">🗺 rota</button></div></div>';
   }).join('');
   renderKcalWeek();
 }
