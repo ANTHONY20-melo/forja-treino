@@ -319,72 +319,95 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
 <script>
 'use strict';
 /* ================== PESSOA 3D ARTICULADA ==================
-   Rig com cotovelos/joelhos/pés/cabeça com rosto. Animacão por motor de poses:
-   cada pose informa ÂNGULOS NO MUNDO (graus, tela: 0=direita,90=baixo,180=esq,270=cima)
-   e o motor converte em deltas por grupo (composição de cadeia raiz>tronco>membros). */
-var PIV={t:[100,150],al:[86,94],al2:[69,115],ar:[114,94],ar2:[131,115],ll:[94,150],kl:[88,192],lr:[106,150],kr:[112,192]};
-var RESTA={T:270,al:129,ar:51,al2:81,ar2:99,ll:98.5,lr:81.5,kl:92.8,kr:87.2};
+   Rig hierárquico real (pai -> filho):
+     quadril -> tronco -> braço -> antebraço
+     quadril -> coxa  -> canela -> pé
+   Cada junta gira em RELAÇÃO ao pai, então o membro nunca desencaixa
+   e o movimento fica natural (antes usava ângulos absolutos no mundo).
+   Ângulos em graus: positivo = horário na tela; 0 = segmento apontando para baixo. */
+var RIG={UA:26,FA:24,TH:46,SH:44};
+var JPIV={t:[100,152],hd:[100,88],al:[86,96],al2:[86,122],ar:[114,96],ar2:[114,122],
+ ll:[93,152],kl:[93,198],lr:[107,152],kr:[107,198],fl:[93,242],fr:[107,242]};
+var POSEK=['T','HD','AL','AL2','AR','AR2','LL','KL','LR','KR','FL','FR'];
 var _avN=0;
 function personSVG(){
   var u='a'+(++_avN);
   var SK='sk'+u,TP='tp'+u,SH='sh'+u,SO='so'+u,GL='gl'+u;
+  var sk='url(#'+SK+')',tp='url(#'+TP+')',sh='url(#'+SH+')',so='url(#'+SO+')';
+  function ln(x1,y1,x2,y2,w,c){return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+c+'" stroke-width="'+w+'" stroke-linecap="round"/>'}
+  function dot(x,y,r,c){return '<circle cx="'+x+'" cy="'+y+'" r="'+r+'" fill="'+c+'"/>'}
   return '<svg viewBox="0 0 200 300">'+
    '<defs>'+
-    '<linearGradient id="'+SK+'" gradientUnits="userSpaceOnUse" x1="46" y1="40" x2="158" y2="264">'+
-     '<stop offset="0" stop-color="#ffe3c6"/><stop offset=".34" stop-color="#e8b48c"/><stop offset=".75" stop-color="#c98d5e"/><stop offset="1" stop-color="#a5693e"/>'+
-    '</linearGradient>'+
-    '<linearGradient id="'+TP+'" gradientUnits="userSpaceOnUse" x1="72" y1="76" x2="128" y2="162">'+
-     '<stop offset="0" stop-color="#ff9a70"/><stop offset=".45" stop-color="#ff6b35"/><stop offset="1" stop-color="#bf350e"/>'+
-    '</linearGradient>'+
-    '<linearGradient id="'+SH+'" gradientUnits="userSpaceOnUse" x1="80" y1="112" x2="120" y2="172">'+
-     '<stop offset="0" stop-color="#46618e"/><stop offset="1" stop-color="#20293f"/>'+
-    '</linearGradient>'+
-    '<linearGradient id="'+SO+'" gradientUnits="userSpaceOnUse" x1="70" y1="230" x2="126" y2="244">'+
-     '<stop offset="0" stop-color="#7ce4f6"/><stop offset="1" stop-color="#178fbd"/>'+
-    '</linearGradient>'+
+    '<linearGradient id="'+SK+'" gradientUnits="userSpaceOnUse" x1="54" y1="44" x2="146" y2="252">'+
+     '<stop offset="0" stop-color="#ffe3c6"/><stop offset=".34" stop-color="#e8b48c"/><stop offset=".75" stop-color="#c98d5e"/><stop offset="1" stop-color="#a5693e"/></linearGradient>'+
+    '<linearGradient id="'+TP+'" gradientUnits="userSpaceOnUse" x1="74" y1="94" x2="126" y2="152">'+
+     '<stop offset="0" stop-color="#ff9a70"/><stop offset=".45" stop-color="#ff6b35"/><stop offset="1" stop-color="#bf350e"/></linearGradient>'+
+    '<linearGradient id="'+SH+'" gradientUnits="userSpaceOnUse" x1="82" y1="118" x2="118" y2="158">'+
+     '<stop offset="0" stop-color="#46618e"/><stop offset="1" stop-color="#20293f"/></linearGradient>'+
+    '<linearGradient id="'+SO+'" gradientUnits="userSpaceOnUse" x1="72" y1="138" x2="128" y2="160">'+
+     '<stop offset="0" stop-color="#7ce4f6"/><stop offset="1" stop-color="#178fbd"/></linearGradient>'+
     '<radialGradient id="'+GL+'" cx=".5" cy=".45" r=".55">'+
-     '<stop offset="0" stop-color="rgba(168,85,247,.15)"/><stop offset="1" stop-color="rgba(168,85,247,0)"/>'+
-    '</radialGradient>'+
+     '<stop offset="0" stop-color="rgba(168,85,247,.16)"/><stop offset="1" stop-color="rgba(168,85,247,0)"/></radialGradient>'+
    '</defs>'+
-   '<ellipse cx="100" cy="152" rx="88" ry="118" fill="url(#'+GL+')"/>'+
-   '<line x1="30" y1="241" x2="170" y2="241" stroke="#23262e" stroke-width="3" stroke-linecap="round"/>'+
-   '<ellipse cx="100" cy="241" rx="44" ry="8" fill="rgba(2,6,14,.5)"/>'+
+   '<ellipse cx="100" cy="150" rx="90" ry="122" fill="url(#'+GL+')"/>'+
+   '<line x1="24" y1="250" x2="176" y2="250" stroke="#23262e" stroke-width="3" stroke-linecap="round"/>'+
+   '<ellipse cx="100" cy="250" rx="46" ry="7" fill="rgba(2,6,14,.45)"/>'+
    '<g id="ro">'+
+    /* ---- perna esquerda ---- */
     '<g id="ll">'+
-     '<line x1="94" y1="150" x2="88" y2="192" stroke="url(#'+SK+')" stroke-width="13" stroke-linecap="round"/>'+
+     ln(93,152,93,198,15,sk)+
+     dot(93,152,7.5,so)+
      '<g id="kl">'+
-      '<line x1="88" y1="192" x2="86" y2="232" stroke="url(#'+SK+')" stroke-width="10.5" stroke-linecap="round"/>'+
-      '<ellipse cx="80" cy="237" rx="8.5" ry="4.6" fill="url(#'+SO+')"/>'+
-     '</g>'+
-    '</g>'+
-    '<g id="lr">'+
-     '<line x1="106" y1="150" x2="112" y2="192" stroke="url(#'+SK+')" stroke-width="13" stroke-linecap="round"/>'+
-     '<g id="kr">'+
-      '<line x1="112" y1="192" x2="114" y2="232" stroke="url(#'+SK+')" stroke-width="10.5" stroke-linecap="round"/>'+
-      '<ellipse cx="120" cy="237" rx="8.5" ry="4.6" fill="url(#'+SO+')"/>'+
-     '</g>'+
-    '</g>'+
-    '<g id="t">'+
-     '<line x1="100" y1="148" x2="100" y2="130" stroke="url(#'+SH+')" stroke-width="27" stroke-linecap="round"/>'+
-     '<line x1="100" y1="134" x2="100" y2="96" stroke="url(#'+TP+')" stroke-width="25" stroke-linecap="round"/>'+
-     '<line x1="100" y1="94" x2="100" y2="81" stroke="url(#'+SK+')" stroke-width="9" stroke-linecap="round"/>'+
-     '<circle cx="100" cy="63" r="15.5" fill="url(#'+SK+')"/>'+
-     '<path d="M84.8 60 a15.5 15.5 0 0 1 30.4 0 q-4 -8 -15.2 -8 t-15.2 8 z" fill="#3a2b23"/>'+
-     '<circle cx="94.5" cy="66" r="1.5" fill="#241d18"/>'+
-     '<circle cx="105.5" cy="66" r="1.5" fill="#241d18"/>'+
-     '<path d="M96 70.5 q4 2.6 8 0" stroke="#b96f4d" stroke-width="1.5" fill="none" stroke-linecap="round"/>'+
-     '<g id="al">'+
-      '<line x1="86" y1="94" x2="69" y2="115" stroke="url(#'+SK+')" stroke-width="10.5" stroke-linecap="round"/>'+
-      '<g id="al2">'+
-       '<line x1="69" y1="115" x2="73" y2="141" stroke="url(#'+SK+')" stroke-width="9" stroke-linecap="round"/>'+
-       '<circle cx="73" cy="144" r="4.3" fill="url(#'+SK+')"/>'+
+      ln(93,198,93,242,12,sk)+
+      dot(93,198,6,sk)+
+      '<g id="fl">'+
+       '<path d="M92 237 q-12 2 -16 6 q-2 3 4 3 l12 -2 z" fill="'+so+'"/>'+
       '</g>'+
      '</g>'+
+    '</g>'+
+    /* ---- perna direita ---- */
+    '<g id="lr">'+
+     ln(107,152,107,198,15,sk)+
+     dot(107,152,7.5,so)+
+     '<g id="kr">'+
+      ln(107,198,107,242,12,sk)+
+      dot(107,198,6,sk)+
+      '<g id="fr">'+
+       '<path d="M108 237 q12 2 16 6 q2 3 -4 3 l-12 -2 z" fill="'+so+'"/>'+
+      '</g>'+
+     '</g>'+
+    '</g>'+
+    /* ---- tronco ---- */
+    '<g id="t">'+
+     '<path d="M86 95 q14 -5 28 0 l4 48 q-18 7 -36 0 z" fill="'+tp+'"/>'+
+     '<path d="M84 140 q16 6 32 0 l2 17 q-18 7 -36 0 z" fill="'+so+'"/>'+
+     /* ---- cabeça ---- */
+     '<g id="hd">'+
+      ln(100,96,100,84,9,sk)+
+      '<circle cx="100" cy="72" r="15.5" fill="'+sk+'"/>'+
+      '<path d="M85 69 a15.5 15.5 0 0 1 30 0 q-4 -8 -15 -8 t-15 8 z" fill="#3a2b23"/>'+
+      '<circle cx="94.5" cy="74" r="1.6" fill="#241d18"/>'+
+      '<circle cx="105.5" cy="74" r="1.6" fill="#241d18"/>'+
+      '<path d="M95.5 79 q4.5 2.8 9 0" stroke="#b96f4d" stroke-width="1.6" fill="none" stroke-linecap="round"/>'+
+     '</g>'+
+     /* ---- braço esquerdo ---- */
+     '<g id="al">'+
+      ln(86,96,86,122,12,sk)+
+      dot(86,96,6.4,tp)+
+      '<g id="al2">'+
+       ln(86,122,86,146,10,sk)+
+       dot(86,122,5.2,sk)+
+       dot(86,149,5,sk)+
+      '</g>'+
+     '</g>'+
+     /* ---- braço direito ---- */
      '<g id="ar">'+
-      '<line x1="114" y1="94" x2="131" y2="115" stroke="url(#'+SK+')" stroke-width="10.5" stroke-linecap="round"/>'+
+      ln(114,96,114,122,12,sk)+
+      dot(114,96,6.4,tp)+
       '<g id="ar2">'+
-       '<line x1="131" y1="115" x2="127" y2="141" stroke="url(#'+SK+')" stroke-width="9" stroke-linecap="round"/>'+
-       '<circle cx="127" cy="144" r="4.3" fill="url(#'+SK+')"/>'+
+       ln(114,122,114,146,10,sk)+
+       dot(114,122,5.2,sk)+
+       dot(114,149,5,sk)+
       '</g>'+
      '</g>'+
     '</g>'+
@@ -409,46 +432,68 @@ const ANIM_MAP=[
 function normName(s){return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
 function animOf(name){name=normName(name);for(const[t,cls]of ANIM_MAP){if(t.test(name))return cls}return'breath'}
 
-/* ---- motor de poses (ângulos-alvo no mundo -> transform por grupo) ---- */
+/* ================== MOTOR DE POSES ================== */
 var AVREG=[];
-function M(x){return (180-x%360+720)%360}
-var POSEK=['T','AL','AL2','AR','AR2','LL','KL','LR','KR'];
+/* interpolação linear entre keyframes */
 function lerpPose(A,B,t){
-  var o={};POSEK.forEach(function(k){o[k]=(A[k]==null?0:A[k])+((B[k]==null?0:B[k])-(A[k]==null?0:A[k]))*t});
-  o.rr=(A.rr==null?0:A.rr)+((B.rr==null?0:B.rr)-(A.rr==null?0:A.rr))*t;
-  o.tx=(A.tx||0)+((B.tx||0)-(A.tx||0))*t;
-  o.ty=(A.ty||0)+((B.ty||0)-(A.ty||0))*t;
+  var o={};
+  POSEK.forEach(function(k){var a=A[k]==null?0:A[k],b=B[k]==null?0:B[k];o[k]=a+(b-a)*t});
+  ['tx','ty','rr','sc'].forEach(function(k){var a=A[k]==null?(k==='sc'?1:0):A[k],b=B[k]==null?(k==='sc'?1:0):B[k];o[k]=a+(b-a)*t});
   return o;
 }
-function poseRender(svg,P){
-  var rr=P.rr||0,parts=[];
-  if(P.tx||P.ty)parts.push('translate('+(P.tx||0).toFixed(2)+' '+(P.ty||0).toFixed(2)+')');
-  if(rr)parts.push('rotate('+rr.toFixed(2)+' 100 150)');
-  var ro=svg.querySelector('#ro');
-  if(ro)ro.setAttribute('transform',parts.length?parts.join(' '):'');
-  var dT=(P.T==null)?0:(P.T-(RESTA.T+rr));
-  setRot(svg,'t',dT);
-  var dAL=P.AL==null?0:P.AL-(RESTA.al+rr+dT);
-  setRot(svg,'al',dAL);
-  var dAL2=P.AL2==null?0:P.AL2-(RESTA.al2+rr+dT+dAL);
-  setRot(svg,'al2',dAL2);
-  var dAR=P.AR==null?0:P.AR-(RESTA.ar+rr+dT);
-  setRot(svg,'ar',dAR);
-  var dAR2=P.AR2==null?0:P.AR2-(RESTA.ar2+rr+dT+dAR);
-  setRot(svg,'ar2',dAR2);
-  var dLL=P.LL==null?0:P.LL-(RESTA.ll+rr);
-  setRot(svg,'ll',dLL);
-  var dKL=P.KL==null?0:P.KL-(RESTA.kl+rr+dLL);
-  setRot(svg,'kl',dKL);
-  var dLR=P.LR==null?0:P.LR-(RESTA.lr+rr);
-  setRot(svg,'lr',dLR);
-  var dKR=P.KR==null?0:P.KR-(RESTA.kr+rr+dLR);
-  setRot(svg,'kr',dKR);
+/* suavização (ease-in-out) — evita movimento robótico */
+function ease(t){return t*t*(3-2*t)}
+/* pose padrão (em pé, braços soltos ao corpo) */
+function REST(){return{T:0,HD:0,AL:8,AR:-8,AL2:-7,AR2:7,LL:3,LR:-3,KL:0,KR:0,FL:0,FR:0,tx:0,ty:0,rr:0,sc:1}}
+function ps(o){var d=REST();for(var k in o)d[k]=o[k];return d}
+/* banco de keyframes: [[t, pose], ...] com t de 0 a 1 */
+function kf(cyc,keys){
+  var kk=keys.map(function(k){return[k[0],ps(k[1])]});
+  /* cada keyframe herda as juntas não informadas da anterior */
+  for(var i=1;i<kk.length;i++){var prev=kk[i-1][1],cur=kk[i][1],m={};for(var j in prev)m[j]=prev[j];for(var j2 in cur)m[j2]=cur[j2];kk[i][1]=m}
+  return{cyc:cyc,f:function(p){
+    var n=kk.length,i=0;
+    while(i<n-1&&p>kk[i+1][0])i++;
+    var A=kk[i],B=kk[(i+1)%n],t1=B[0];
+    if(i===n-1)t1+=1;
+    var u=(p-A[0])/((t1-A[0])||1);
+    if(u<0)u=0;if(u>1)u=1;
+    return lerpPose(A[1],B[1],ease(u));
+  }};
 }
-function setRot(svg,id,deg){
-  var e=svg.querySelector('#'+id);
-  if(!e)return;
-  e.setAttribute('transform',deg?'rotate('+deg.toFixed(2)+' '+PIV[id][0]+' '+PIV[id][1]+')':'');
+/* cinemática inversa de 2 ossos: devolve [ângulo do osso 1, ângulo do osso 2]
+   px,py = origem · tx,ty = alvo · L1,L2 = comprimentos · bend = +1/-1 (lado do cotovelo/joelho) */
+function ik(px,py,tx,ty,L1,L2,bend){
+  var dx=tx-px,dy=ty-py,d=Math.sqrt(dx*dx+dy*dy)||0.01;
+  var mx=L1+L2-0.05,mn=Math.abs(L1-L2)+0.05;
+  if(d>mx){tx=px+dx/d*mx;ty=py+dy/d*mx;d=mx;}
+  if(d<mn){tx=px+dx/d*mn;ty=py+dy/d*mn;d=mn;}
+  var base=Math.atan2(-dx,dy)*180/Math.PI;
+  var g=Math.acos(Math.max(-1,Math.min(1,(L1*L1+d*d-L2*L2)/(2*L1*d))))*180/Math.PI;
+  var b=Math.acos(Math.max(-1,Math.min(1,(L1*L1+L2*L2-d*d)/(2*L1*L2))))*180/Math.PI;
+  return[base+bend*g,-bend*(180-b)];
+}
+/* transform do corpo inteiro (translate + rotação + escala em torno do quadril) */
+function rootTransform(P){
+  var t='';
+  var tx=P.tx||0,ty=P.ty||0,rr=P.rr||0,sc=(P.sc==null?1:P.sc);
+  if(tx||ty)t+='translate('+tx.toFixed(2)+' '+ty.toFixed(2)+') ';
+  if(rr)t+='rotate('+rr.toFixed(2)+' 100 152) ';
+  if(sc!==1)t+='translate(100 152) scale('+sc.toFixed(3)+' '+sc.toFixed(3)+') translate(-100 -152) ';
+  return t.trim();
+}
+/* mapa de transforms por id (usado pelo player e pelo gerador de preview) */
+function poseTransforms(P){
+  var m={ro:rootTransform(P)};
+  POSEK.forEach(function(k){
+    var id=k.toLowerCase(),d=P[k]||0;
+    m[id]=d?('rotate('+d.toFixed(2)+' '+JPIV[id][0]+' '+JPIV[id][1]+')'):'';
+  });
+  return m;
+}
+function poseRender(svg,P){
+  var m=poseTransforms(P);
+  for(var id in m){var e=svg.querySelector('#'+id);if(e)e.setAttribute('transform',m[id])}
 }
 function registerAvatar(el,animId){
   var svg=el.firstElementChild;
@@ -459,134 +504,226 @@ function registerAvatar(el,animId){
 function tickAvatars(){
   var now=performance.now();
   for(var i=0;i<AVREG.length;i++){
-    var a=AVREG[i],ps=POSES[a.anim];
-    if(!ps)continue;
-    poseRender(a.svg,ps.f(((now-a.t0)/1000/ps.cyc)%1));
+    var a=AVREG[i],ps2=POSES[a.anim];
+    if(!ps2)continue;
+    poseRender(a.svg,ps2.f(((now-a.t0)/1000/ps2.cyc)%1));
   }
   requestAnimationFrame(tickAvatars);
 }
 requestAnimationFrame(tickAvatars);
 function poseOfEx(e){return e?(e.a||animOf(e.n)):'breath'}
 function cueOfPose(p){return CUE_BY_ANIM[p]||'Siga a demonstração da pessoa com atenção à postura.'}
-/* ---- BANCO DE POSES (ângulo 0=direita · 90=baixo · 180=esquerda · 270=cima) ---- */
+
+/* ================== BANCO DE POSES ================== */
+/* convenção: ângulo positivo = horário na tela.
+   braço ESQ: + = afasta do corpo · antebraço ESQ: + = dobra para dentro
+   braço DIR: + = traz para o corpo · perna ESQ: + = joelho para fora
+   (os lados são espelhados pelo próprio desenho do rig) */
 var POSES={
- breath:{cyc:3.8,f:function(p){var s=Math.sin(2*Math.PI*p);
-  return{ty:-1.6*s,AL:129+7*s,AR:M(129+7*s)}}},
- squat:{cyc:1.9,f:function(p){var s=Math.sin(Math.PI*p);
-  var a=98.5+26*s,k=99+10*s;
-  return{ty:36*s,T:270,LL:a,KL:k,LR:M(a),KR:M(k),
-   AL:190+4*s,AL2:202+4*s,AR:M(190+4*s),AR2:M(202+4*s)}}},
- open:{cyc:2.6,f:function(p){var s=Math.sin(2*Math.PI*p);
-  return{T:270+1.5*s,AL:184,AL2:188,AR:M(184),AR2:M(188)}}},
- stretch:{cyc:2.8,f:function(p){var sw=Math.sin(2*Math.PI*p);
-  var al=256+8*sw;
-  return{T:270+14*sw,LL:112,KL:112,LR:M(112),KR:M(112),AL:al,AL2:al+4,AR:al+2,AR2:al+8}}},
- jack:{cyc:.85,f:function(p){var o=(1-Math.cos(2*Math.PI*p))/2;
-  var a=98.5+26*o,b=129+128*o;
-  return{ty:-8*o,T:270,LL:a,KL:a,LR:M(a),KR:M(a),AL:b,AL2:b,AR:M(b),AR2:M(b)}}},
- crossjack:{cyc:.95,f:function(p){var o=(1-Math.cos(2*Math.PI*p))/2;
-  var a=98.5+24*o,b=129-84*o;
-  return{ty:-5*o,T:270,LL:a,KL:a,LR:M(a),KR:M(a),AL:b,AL2:b,AR:M(b),AR2:M(b)}}},
- jacksq:{cyc:1.7,f:function(p){var s=Math.sin(Math.PI*p);
-  var a=98.5+28*s,b=129+126*s;
-  return{ty:32*s,T:270,LL:a,KL:a+2,LR:M(a),KR:M(a+2),AL:b-4,AL2:b+6,AR:M(b-4),AR2:M(b+6)}}},
- run:{cyc:.55,f:function(p){
-  var sw=Math.sin(2*Math.PI*p),a=sw>0?sw:0,b=sw<0?-sw:0;
-  var LL=98.5+166.5*a+15.5*b, KL=95+(LL-95)*b;
-  var LR=81.5-166.5*b-15.5*a, KR=85+(LR-85)*a;
-  var AL=129+21*a-74*b, AL2=81+43*a+68*b;
-  return{ty:-3.6*Math.abs(Math.cos(2*Math.PI*p))-0.5,T:269,
-   LL:LL,KL:KL,LR:LR,KR:KR,AL:AL,AL2:AL2,AR:M(AL),AR2:M(AL2)}}},
- skip:{cyc:.6,f:function(p){
-  var sw=Math.sin(2*Math.PI*p),a=sw>0?sw:0,b=sw<0?-sw:0;
-  var LL=98.5+163.5*a+15.5*b, KL=97+(LL-97)*b;
-  var LR=81.5-163.5*b-15.5*a, KR=83+(LR-83)*a;
-  var AL=129+133*a+11*b;
-  return{ty:-8*Math.abs(Math.sin(2*Math.PI*p)),T:268,
-   LL:LL,KL:KL,LR:LR,KR:KR,AL:AL,AL2:AL,AR:M(AL),AR2:AL}}},
- sumosquat:{cyc:1.9,f:function(p){var s=Math.sin(Math.PI*p);
-  var a=98.5+30*s,k=94-2*s;
-  return{ty:38*s,T:270,LL:a,KL:k,LR:M(a),KR:M(k),
-   AL:184,AL2:196,AR:M(184),AR2:M(196)}}},
- lunge:{cyc:2.6,f:function(p){
-  var sw=Math.sin(2*Math.PI*p),a=sw>0?sw:0,b=sw<0?-sw:0,d=Math.max(a,b);
-  var LL=98.5+151.5*a+17.5*b, KL=92+(LL-92)*b;
-  var LR=81.5-17.5*a-151.5*b, KR=88+(LR-88)*a;
-  var AL=259-8*sw;
-  return{ty:14*d,T:270-5*d,LL:LL,KL:KL,LR:LR,KR:KR,
-   AL:AL,AL2:AL-12,AR:M(AL),AR2:M(AL-12)}}},
- skater:{cyc:1.0,f:function(p){
-  var sw=Math.sin(2*Math.PI*p),a=sw>0?sw:0,b=sw<0?-sw:0;
-  var LL=98.5+13.5*a-46.5*b, KL=104+(LL-104)*b;
-  var LR=81.5+46.5*a-13.5*b, KR=76+(LR-76)*a;
-  var AL=129-99*a+121*b, AL2=81-16*a+51*b;
-  return{tx:15*sw,ty:-7*Math.abs(Math.sin(2*Math.PI*p)),T:270+6*sw,
-   LL:LL,KL:KL,LR:LR,KR:KR,AL:AL,AL2:AL2,AR:M(AL),AR2:M(AL2)}}},
- calfraise:{cyc:1.6,f:function(p){var s=Math.sin(Math.PI*p);
-  return{ty:-7*s,T:270,LL:98.5,KL:98.5,LR:81.5,KR:81.5,AL:127,AL2:83,AR:M(127),AR2:M(83)}}},
- wall:{cyc:2.4,f:function(p){var s=1.2*Math.sin(2*Math.PI*p);
-  return{ty:1.5*s,T:270,LL:0,KL:90,LR:0,KR:90,
-   AL:148,AL2:158,AR:M(148),AR2:M(158)}}},
- pushup:{cyc:1.5,f:function(p){var d=Math.sin(Math.PI*p);
-  return{rr:-90,ty:42+8*d,T:181+3*d,
-   AL:90+18*d,AL2:88-20*d,AR:90+16*d,AR2:92-20*d,
-   LL:-4,KL:8,LR:-2,KR:6}}},
- incline:{cyc:1.6,f:function(p){var d=Math.sin(Math.PI*p);
-  return{rr:-55,ty:64+6*d,T:214,
-   AL:32+8*d,AL2:30-14*d,AR:36+8*d,AR2:34-14*d,
-   LL:25,KL:25,LR:30,KR:30}}},
- dips:{cyc:1.6,f:function(p){var d=Math.sin(Math.PI*p);
-  return{rr:-58,ty:70+8*d,T:216,
-   AL:24,AL2:44-14*d,AR:28,AR2:46-14*d,
-   LL:18,KL:18,LR:22,KR:22}}},
- plank:{cyc:2.6,f:function(p){
-  return{rr:-92,ty:41+1.4*Math.sin(2*Math.PI*p),T:180,
-   AL:92,AL2:90,AR:88,AR2:92,LL:-2,KL:12,LR:0,KR:6}}},
- shplank:{cyc:1.5,f:function(p){
-  var sw=Math.sin(2*Math.PI*p),a=sw>0?sw:0,b=sw<0?-sw:0;
-  return{rr:-92,ty:41,T:180,LL:-2,KL:12,LR:0,KR:6,
-   AL:92+45*b,AL2:90,AR:92-45*a,AR2:92+103*a}}},
- mount:{cyc:1.0,f:function(p){
-  var sw=Math.sin(2*Math.PI*p),a=sw>0?sw:0,b=sw<0?-sw:0;
-  var LL=-3-62*a, LR=-3-62*b;
-  return{rr:-90,ty:44,T:180,
-   LL:LL,KL:-78+(LL+78)*b,LR:LR,KR:-78+(LR+78)*a,
-   AL:92,AL2:92,AR:88,AR2:88}}},
- crunch:{cyc:2.0,f:function(p){var s=Math.sin(Math.PI*p);
-  return{rr:-90,ty:48,T:179-15*s,
-   LL:215,KL:100,LR:212,KR:98,
-   AL:163,AL2:253,AR:161,AR2:251}}},
- toetouch:{cyc:2.0,f:function(p){var s=Math.sin(Math.PI*p);
-  return{rr:-90,ty:48,T:178-16*s,
-   LL:210,KL:97,LR:207,KR:95,
-   AL:25,AL2:12,AR:27,AR2:15}}},
- legrais:{cyc:2.4,f:function(p){var s=Math.sin(2*Math.PI*p);
-  return{rr:-90,ty:44,
-   LL:-90+4*s,KL:-88,LR:-88,KR:-88,
-   AL:8,AL2:14,AR:6,AR2:12}}},
- superman:{cyc:2.2,f:function(p){var s=Math.sin(Math.PI*p);
-  return{rr:-88,ty:40,T:182-16*s,
-   LL:-14-20*s,KL:-30,LR:-6-18*s,KR:-20,
-   AL:196,AL2:196,AR:192,AR2:194}}},
- bridge:{cyc:2.0,f:function(p){var s=Math.sin(Math.PI*p);
-  return{rr:-85,ty:34+9*s,T:181,
-   LL:26,KL:92,LR:22,KR:90,
-   AL:94,AL2:96,AR:92,AR2:96}}},
- cat:{cyc:2.2,f:function(p){var s=Math.sin(2*Math.PI*p);
-  return{rr:-90,ty:46,T:180+10*s,
-   LL:95,KL:10,LR:93,KR:8,
-   AL:92,AL2:92,AR:90,AR2:92}}},
- burpee:{cyc:1.7,f:function(p){
-  var K0={T:270,LL:98.5,KL:98.5,LR:81.5,KR:81.5,AL:129,AL2:81,AR:51,AR2:99};
-  var K1={ty:34,T:273,LL:124,KL:106,LR:60,KR:80,AL:198,AL2:206,AR:M(198),AR2:M(206)};
-  var K2={rr:-90,ty:40,T:181,AL:92,AL2:92,AR:90,AR2:92,LL:-3,KL:10,LR:-1,KR:8};
-  var K3={ty:-16,T:268,LL:126,KL:126,LR:M(126),KR:M(126),AL:262,AL2:262,AR:M(262),AR2:M(262)};
-  if(p<.28)return lerpPose(K0,K1,p/.28);
-  if(p<.44)return lerpPose(K1,K2,(p-.28)/.16);
-  if(p<.66)return K2;
-  if(p<.82)return lerpPose(K2,K1,(p-.66)/.16);
-  return lerpPose(K1,K3,(p-.82)/.18);
- }}
+ /* respiração — peito abre e fecha, corpo parado */
+ breath:kf(4.0,[
+  [0,{}],
+  [0.5,{T:1.6,HD:1.6,AL:12,AR:-12,AL2:-11,AR2:11,ty:-1.8}],
+  [1,{}]
+ ]),
+ /* agachamento — joelhos abrem, quadril desce, pés plantados (IK) */
+ squat:{cyc:2.4,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u),ty=32*e,hy=152+ty;
+  var L=ik(93,hy,93,242,RIG.TH,RIG.SH,1),R=ik(107,hy,107,242,RIG.TH,RIG.SH,-1);
+  return ps({ty:ty,T:4*e,HD:-4*e,AL:-14-12*e,AR:14+12*e,AL2:-58-26*e,AR2:58+26*e,
+             LL:L[0],KL:L[1],LR:R[0],KR:R[1],FL:-5*e,FR:5*e});
+ }},
+ /* agachamento sumô — pés afastados, joelhos bem abertos */
+ sumosquat:{cyc:2.3,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u),ty=36*e,hy=152+ty;
+  var L=ik(93,hy,74,242,RIG.TH,RIG.SH,1),R=ik(107,hy,126,242,RIG.TH,RIG.SH,-1);
+  return ps({ty:ty,T:2*e,HD:-2*e,AL:-10-10*e,AR:10+10*e,AL2:-50-24*e,AR2:50+24*e,
+             LL:L[0],KL:L[1],LR:R[0],KR:R[1],FL:-8*e,FR:8*e});
+ }},
+ /* agachamento com salto — desce e explode para cima */
+ jacksq:{cyc:1.9,f:function(p){
+  if(p<0.46){
+   var e=ease(p/0.46),hy=152+32*e;
+   var L=ik(93,hy,93,242,RIG.TH,RIG.SH,1),R=ik(107,hy,107,242,RIG.TH,RIG.SH,-1);
+   return ps({ty:32*e,T:4*e,AL:-14-12*e,AR:14+12*e,AL2:-58-26*e,AR2:58+26*e,
+              LL:L[0],KL:L[1],LR:R[0],KR:R[1]});
+  }
+  if(p<0.62){
+   var e2=ease((p-0.46)/0.16);
+   return ps({ty:32-48*e2,T:4-8*e2,HD:-4,AL:-26+178*e2,AR:26-178*e2,AL2:-84+78*e2,AR2:84-78*e2,
+              LL:3,LR:-3,KL:0,KR:0,FL:-8*e2,FR:8*e2});
+  }
+  var e3=ease((p-0.62)/0.38);
+  return ps({ty:-16+16*e3,T:-4+4*e3,HD:-4,AL:152-144*e3,AR:-152+144*e3,AL2:-6,AR2:6,LL:3,LR:-3});
+ }},
+ /* polichinelo — abre tudo e volta */
+ jack:kf(0.95,[
+  [0,{}],
+  [0.5,{T:-3,HD:-3,AL:150,AR:-150,AL2:-8,AR2:8,LL:26,LR:-26,FL:-8,FR:8,ty:-9}],
+  [1,{}]
+ ]),
+ /* polichinelo cruzado — braços cruzam na frente */
+ crossjack:kf(1.05,[
+  [0,{AL:18,AR:-18,AL2:-16,AR2:16}],
+  [0.5,{T:-2,AL:-40,AR:40,AL2:-72,AR2:72,LL:26,LR:-26,FL:-8,FR:8,ty:-8}],
+  [1,{AL:18,AR:-18,AL2:-16,AR2:16}]
+ ]),
+ /* corrida — pernas alternadas com joelho alto (IK), braços em contraponto */
+ run:{cyc:0.62,f:function(p){
+  var s=Math.sin(2*Math.PI*p),a=s>0?s:0,b=s<0?-s:0;
+  var bob=-4*Math.abs(Math.cos(2*Math.PI*p));
+  var hy=152+bob;
+  var L=ik(93,hy,93-14*a+6*b,242-46*a-2*b,RIG.TH,RIG.SH,1);
+  var R=ik(107,hy,107+14*b-6*a,242-46*b-2*a,RIG.TH,RIG.SH,-1);
+  return ps({ty:bob-1,T:3*s,HD:2*s,
+             AL:-40*a+34*b,AR:34*a-40*b,AL2:-44*a-12*b,AR2:-44*b-12*a,
+             LL:L[0],KL:L[1],LR:R[0],KR:R[1],FL:-12*a-4*b,FR:-12*b-4*a});
+ }},
+ /* skip — joelho ainda mais alto, salto no lugar */
+ skip:{cyc:0.68,f:function(p){
+  var s=Math.sin(2*Math.PI*p),a=s>0?s:0,b=s<0?-s:0;
+  var bob=-9*Math.abs(Math.cos(2*Math.PI*p));
+  var hy=152+bob;
+  var L=ik(93,hy,93-18*a+8*b,242-58*a-2*b,RIG.TH,RIG.SH,1);
+  var R=ik(107,hy,107+18*b-8*a,242-58*b-2*a,RIG.TH,RIG.SH,-1);
+  return ps({ty:bob,T:4*s,HD:2*s,AL:-52*a+40*b,AR:40*a-52*b,AL2:-38,AR2:-38,
+             LL:L[0],KL:L[1],LR:R[0],KR:R[1],FL:-14*a,FR:-14*b});
+ }},
+ /* afundo lateral — uma perna sai, quadril desce */
+ lunge:{cyc:2.8,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u),ty=26*e,hy=152+ty;
+  var L=ik(93,hy,68,242,RIG.TH,RIG.SH,1),R=ik(107,hy,124,242,RIG.TH,RIG.SH,-1);
+  return ps({ty:ty,T:3*e,HD:-3*e,AL:-18-14*e,AR:18+14*e,AL2:-40-30*e,AR2:40+30*e,
+             LL:L[0],KL:L[1],LR:R[0],KR:R[1],FL:-6*e,FR:6*e});
+ }},
+ /* skater — salto lateral cruzando as pernas */
+ skater:kf(1.25,[
+  [0,{AL:24,AR:-24,AL2:-14,AR2:14,LL:16,LR:-16,KL:-10,KR:10,tx:0,ty:0}],
+  [0.35,{AL:52,AR:-52,AL2:-18,AR2:18,LL:-26,LR:52,KL:26,KR:-34,tx:16,ty:-8,T:6,HD:4}],
+  [0.65,{AL:52,AR:-52,AL2:-18,AR2:18,LL:52,LR:-26,KL:-34,KR:26,tx:-16,ty:-8,T:-6,HD:-4}],
+  [1,{AL:24,AR:-24,AL2:-14,AR2:14,LL:16,LR:-16,KL:-10,KR:10,tx:0,ty:0}]
+ ]),
+ /* panturrilha — sobe nos dedos dos pés */
+ calfraise:kf(1.9,[
+  [0,{FL:0,FR:0,ty:0}],
+  [0.45,{FL:-26,FR:26,ty:-9,T:-2,AL:12,AR:-12}],
+  [1,{FL:0,FR:0,ty:0}]
+ ]),
+ /* parede — agachamento na parede, braços para frente */
+ wall:{cyc:2.8,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u),ty=34*e,hy=152+ty;
+  var L=ik(93,hy,93,242,RIG.TH,RIG.SH,1),R=ik(107,hy,107,242,RIG.TH,RIG.SH,-1);
+  return ps({ty:ty,T:2*e,HD:-2*e,AL:-16,AR:16,AL2:-78,AR2:78,
+             LL:L[0],KL:L[1],LR:R[0],KR:R[1]});
+ }},
+ /* flexão — corpo de bruços no chão, cotovelos dobram (braços perpendiculares = -rr) */
+ pushup:{cyc:1.7,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({rr:90,sc:0.78,tx:4,ty:78+4*e,T:6*e,HD:5*e,
+             AL:-90,AR:-90,AL2:-90+14*e,AR2:-90+14*e,
+             LL:2,LR:-2,KL:0,KR:0,FL:180,FR:0});
+ }},
+ /* flexão inclinada — corpo a 48°, mãos mais altas */
+ incline:{cyc:1.8,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({rr:48,sc:0.8,tx:2,ty:50+3*e,T:6*e,HD:5*e,
+             AL:-48,AR:-48,AL2:-132+14*e,AR2:-132+14*e,
+             LL:0,LR:0,KL:0,KR:0,FL:-138,FR:42});
+ }},
+ /* mergulho — costas na cadeira, flexiona cotovelo */
+ dips:{cyc:1.8,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({ty:13*e,T:-2*e,AL:18,AR:-18,AL2:-48*e,AR2:-48*e,LL:8,LR:-8,KL:4,KR:-4,HD:4*e});
+ }},
+ /* prancha — corpo reto de bruços, apoiado nos braços */
+ plank:{cyc:3.0,f:function(p){
+  var bob=Math.sin(2*Math.PI*p)*1.2;
+  return ps({rr:90,sc:0.78,tx:4,ty:88+bob,T:0,
+             AL:-90,AR:-90,AL2:-90,AR2:-90,LL:2,LR:-2,KL:0,KR:0,FL:180,FR:0,HD:4});
+ }},
+ /* prancha com toque de ombro — antebraço dobra para o ombro */
+ shplank:{cyc:1.7,f:function(p){
+  var s=Math.sin(2*Math.PI*p),a=s>0?s:0,b=s<0?-s:0;
+  return ps({rr:90,sc:0.78,tx:4,ty:88,T:0,
+             AL:-90,AR:-90,AL2:-90,AR2:-90,LL:2,LR:-2,KL:0,KR:0,FL:180,FR:0,HD:4});
+ }},
+ /* mountain climber — joelhos alternados para o peito */
+ mount:{cyc:1.1,f:function(p){
+  var s=Math.sin(2*Math.PI*p),a=s>0?s:0,b=s<0?-s:0;
+  var f=Math.pow(a,0.6),g=Math.pow(b,0.6);
+  return ps({rr:90,sc:0.78,tx:4,ty:84,T:0,
+             AL:-90,AR:-90,AL2:-90,AR2:-90,
+             LL:2-178*f,KL:178*f,LR:2-178*g,KR:178*g,FL:180,FR:0,HD:4});
+ }},
+ /* abdominal — deitado de costas, tronco enrola */
+ crunch:{cyc:2.3,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({rr:-90,sc:0.8,tx:0,ty:88,T:72*e,HD:12*e,
+             AL:18,AR:18,AL2:-64,AR2:-64,
+             LL:-90,LR:-90,KL:180,KR:180,FL:-90,FR:90});
+ }},
+ /* tocar os pés — tronco sobe até os pés */
+ toetouch:{cyc:2.3,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({rr:-90,sc:0.8,tx:0,ty:88-10*e,T:95*e,HD:14*e,
+             AL:-5,AR:-5,AL2:-30,AR2:-30,
+             LL:-90,LR:-90,KL:180,KR:180,FL:-90,FR:90});
+ }},
+ /* elevação de pernas — deitado, pernas retas sobem e descem */
+ legrais:{cyc:2.7,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({rr:-90,sc:0.8,tx:0,ty:88,T:6*e,HD:0,
+             AL:-6,AR:-6,AL2:-8,AR2:-8,
+             LL:-72+6*e,LR:-72+6*e,KL:0,KR:0,FL:108,FR:-72});
+ }},
+ /* superman — de bruços, braços e pernas levantam */
+ superman:{cyc:2.5,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({rr:90,sc:0.8,tx:2,ty:88,T:-6*e,HD:-4*e,
+             AL:175,AR:175,AL2:-10,AR2:-10,
+             LL:22,LR:22,KL:0,KR:0,FL:180,FR:0});
+ }},
+ /* ponte — de costas, quadril sobe e ombros ficam no chão */
+ bridge:{cyc:2.3,f:function(p){
+  var u=Math.sin(Math.PI*p),e=ease(u);
+  return ps({rr:-90,sc:0.8,tx:16,ty:88-18*e,T:-28*e,HD:8*e,
+             AL:180+28*e,AR:180+28*e,AL2:0,AR2:0,
+             LL:-58,LR:-58,KL:148,KR:148,FL:-90,FR:90});
+ }},
+ /* gato — de quatro apoios, costas arquivam e arredondam */
+ cat:{cyc:2.5,f:function(p){
+  var s=Math.sin(2*Math.PI*p);
+  return ps({rr:90,sc:0.8,tx:2,ty:70,T:15*s,HD:-9*s,
+             AL:-90,AR:-90,AL2:0,AR2:0,LL:-45,LR:-45,KL:45,KR:45,FL:-90,FR:90});
+ }},
+ /* burpee — agacha, prancha, agacha e salta com braços erguidos */
+ burpee:{cyc:2.1,f:function(p){
+  var K0={T:0,HD:0,AL:8,AR:-8,AL2:-7,AR2:7,LL:3,LR:-3,KL:0,KR:0,ty:0,rr:0,sc:1};
+  function squatAt(e){
+   var hy=152+32*e,L=ik(93,hy,93,242,RIG.TH,RIG.SH,1),R=ik(107,hy,107,242,RIG.TH,RIG.SH,-1);
+   return ps({ty:32*e,T:4*e,AL:-26*e,AR:26*e,AL2:-84*e,AR2:84*e,LL:L[0],KL:L[1],LR:R[0],KR:R[1]});
+  }
+  var plankP=ps({rr:90,sc:0.78,tx:4,ty:88,T:0,AL:-90,AR:-90,AL2:-90,AR2:-90,LL:2,LR:-2,KL:0,KR:0,FL:180,FR:0});
+  var jumpP=ps({ty:-16,T:-4,HD:-4,AL:154,AR:-154,AL2:-6,AR2:6,LL:3,LR:-3,FL:-8,FR:8});
+  if(p<0.26)return lerpPose(K0,squatAt(ease(p/0.26)),ease(p/0.26));
+  if(p<0.42)return lerpPose(squatAt(1),plankP,ease((p-0.26)/0.16));
+  if(p<0.60)return plankP;
+  if(p<0.76)return lerpPose(plankP,squatAt(1),ease((p-0.60)/0.16));
+  if(p<0.86)return lerpPose(squatAt(1),jumpP,ease((p-0.76)/0.10));
+  return lerpPose(jumpP,K0,ease((p-0.86)/0.14));
+ }},
+ /* posição neutra (abrir o peito) */
+ open:kf(3.2,[
+  [0,{AL:70,AR:-70,AL2:-4,AR2:4,T:-1}],
+  [0.5,{AL:88,AR:-88,AL2:-2,AR2:2,T:-3,HD:-2,ty:-1}],
+  [1,{AL:70,AR:-70,AL2:-4,AR2:4,T:-1}]
+ ]),
+ /* alongamento — braços acima e inclinação lateral */
+ stretch:kf(3.4,[
+  [0,{AL:148,AR:-148,AL2:-8,AR2:8,T:0}],
+  [0.5,{AL:158,AR:-158,AL2:-6,AR2:6,T:13,HD:9,ty:-2}],
+  [1,{AL:148,AR:-148,AL2:-8,AR2:8,T:0}]
+ ])
 };
 const CUE_BY_ANIM={
  squat:'Pés na largura dos ombros, desça até a coxa ficar paralela ao chão, joelho no eixo do pé.',
