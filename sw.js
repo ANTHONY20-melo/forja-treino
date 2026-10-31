@@ -1,5 +1,5 @@
 /* FORJA — Service Worker (offline-first) */
-var CACHE = 'forja-v6';
+var CACHE = 'forja-v7';
 
 var CORE = [
   './',
