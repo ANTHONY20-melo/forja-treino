@@ -247,7 +247,16 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
 <!-- HISTÓRICO -->
 <div id="view-hist" class="view">
   <h2>Histórico</h2>
+  <div class="card" style="margin-bottom:12px">
+    <div class="sub" style="margin-bottom:10px">📤 Compartilhe seu progresso (treinos + corridas) ou limpe os dados quando quiser.</div>
+    <div class="row-btns" style="gap:8px">
+      <button class="btn btn-primary" onclick="abrirRelatorio()">📤 Enviar / Salvar relatório</button>
+      <button class="btn btn-danger" onclick="abrirApagarHist()">🗑 Apagar histórico</button>
+    </div>
+  </div>
   <div id="hist-list"></div>
+  <h2 style="margin-top:16px">🏃 Corridas</h2>
+  <div id="hist-runs"></div>
 </div>
 
 <!-- PLAYER -->
@@ -312,6 +321,36 @@ label{font-size:12.5px;color:var(--muted);display:block;margin-top:12px}
 </div>
 
 <div id="print-area" style="display:none"></div>
+
+<!-- MODAL RELATÓRIO -->
+<div id="rel-modal" class="demo-modal" onclick="if(event.target===this)fecharRelatorio()">
+  <div class="card" style="max-width:420px">
+    <h3 style="font-size:17px">📤 Relatório FORJA</h3>
+    <div class="sub" id="rel-resumo" style="text-align:center;margin:6px 0 10px"></div>
+    <pre id="rel-preview" style="max-height:36vh;overflow:auto;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;text-align:left"></pre>
+    <div class="row-btns" style="flex-wrap:wrap;gap:8px;margin-top:12px">
+      <button class="btn btn-primary" onclick="compartilharRelatorio()">📤 Enviar</button>
+      <button class="btn btn-green" onclick="salvarRelatorioTxt()">💾 Salvar .txt</button>
+      <button class="btn btn-ghost" onclick="copiarRelatorio()">📋 Copiar</button>
+      <button class="btn btn-ghost" onclick="relatorioPDF()">🖨 PDF</button>
+    </div>
+    <button class="btn btn-ghost" style="margin-top:8px" onclick="fecharRelatorio()">Fechar</button>
+  </div>
+</div>
+
+<!-- MODAL APAGAR HISTÓRICO -->
+<div id="del-modal" class="demo-modal" onclick="if(event.target===this)fecharApagarHist()">
+  <div class="card" style="max-width:380px">
+    <div style="text-align:center;font-size:34px">🗑️</div>
+    <h3 style="font-size:17px">Apagar todo o histórico?</h3>
+    <div class="sub" id="del-info" style="text-align:center;margin:8px 0"></div>
+    <div class="sub" style="text-align:center;margin-bottom:12px">Perfil, evolução de peso e desafio de 30 dias <b>ficam intactos</b>.</div>
+    <div class="row-btns" style="gap:8px">
+      <button class="btn btn-ghost" onclick="fecharApagarHist()">Cancelar</button>
+      <button class="btn btn-danger" onclick="apagarHistorico()">Apagar tudo</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -951,8 +990,152 @@ function renderHome(){
 }
 function renderHist(){
   var el=document.getElementById('hist-list');
-  if(!state.history.length){el.innerHTML='<div class="empty"><span class="ico">📊</span>Histórico vazio</div>';return}
-  el.innerHTML='<div class="card">'+state.history.slice().reverse().map(histHTML).join('')+'</div>';
+  if(!state.history.length){el.innerHTML='<div class="card"><div class="empty"><span class="ico">📊</span>Histórico vazio<br>Nenhum treino concluído ainda.</div></div>';}
+  else el.innerHTML='<div class="card">'+state.history.slice().reverse().map(histHTML).join('')+'</div>';
+  renderHistRuns();
+}
+/* corridas na aba Histórico */
+function renderHistRuns(){
+  var el=document.getElementById('hist-runs');if(!el)return;
+  var rs=state.runs||[];
+  if(!rs.length){el.innerHTML='<div class="card"><div class="empty"><span class="ico">🏃</span>Nenhuma corrida registrada ainda.</div></div>';return}
+  el.innerHTML='<div class="card">'+rs.slice().reverse().map(function(r){
+    var pace=(r.dist>0&&r.time)?(' · '+fmtPace(r.time,Math.round(r.dist*1000))+' min/km'):'';
+    return '<div class="hist-item"><div><b>'+(+r.dist||0).toFixed(2)+' km</b> · '+fmtTimer(r.time||0)+
+      '<div class="sub">'+fmtBrasil(r.date)+' · '+(r.min||0)+' min · 🔥 '+(r.kcal||0)+' kcal'+
+      (r.bpm?' · ❤ '+r.bpm+' bpm':'')+pace+'</div></div><div style="font-size:20px">🏃</div></div>';
+  }).join('')+'</div>';
+}
+
+/* ================== RELATÓRIO (ENVIAR / SALVAR) ==================
+   Gera um relatório em texto com treinos + corridas, pronto para mandar
+   por WhatsApp, e-mail ou qualquer app (share nativo / copiar / .txt / PDF). */
+function numBR(n){return String(n).replace('.',',')}
+function relatorioResumo(){
+  var hs=state.history||[],rs=state.runs||[];
+  var km=0,min=0,kcal=0;
+  rs.forEach(function(r){km+=(parseFloat(r.dist)||0);min+=(r.min||0);kcal+=(r.kcal||0)});
+  return{hs:hs,rs:rs,treinos:hs.length,min:state.totalMin||0,kcal:state.kcalTotal||0,
+         streak:state.streak||0,km:km,runMin:min,runKcal:kcal};
+}
+function relatorioTexto(){
+  var p=state.profile||{},r=relatorioResumo(),L=[];
+  L.push('🔥 FORJA — Relatório de Progresso');
+  L.push('Gerado em '+fmtBrasil(fmtDate(new Date())));
+  L.push('');
+  L.push('─── ALUNO ───');
+  L.push('Nome: '+(p.nome||'—'));
+  L.push('Idade: '+(p.idade||'—')+' | Sexo: '+(p.sexo||'—')+' | Altura: '+(p.alt?p.alt+' cm':'—')+' | Peso: '+(p.peso?p.peso+' kg':'—'));
+  L.push('Objetivo: '+(p.goal||'—')+' | Nível: '+(p.nivel||'—')+' | Biotipo: '+(p.bio||'—'));
+  L.push('');
+  L.push('─── RESUMO ───');
+  L.push('Treinos concluídos: '+r.treinos);
+  L.push('Minutos treinados: '+r.min);
+  L.push('Calorias queimadas: '+r.kcal+' kcal');
+  L.push('Sequência atual: '+r.streak+' dia(s)');
+  L.push('Corridas: '+r.rs.length+' | '+numBR(r.km.toFixed(2))+' km | '+r.runMin+' min | '+r.runKcal+' kcal');
+  L.push('');
+  L.push('─── TREINOS (últimos '+Math.min(20,r.hs.length)+') ───');
+  if(!r.hs.length)L.push('(nenhum treino registrado)');
+  r.hs.slice(-20).reverse().forEach(function(h){
+    L.push(fmtBrasil(h.date)+' · '+h.nome+' · '+(h.min||h.dur||0)+' min · '+(h.ex||0)+' exercícios'+(h.kcal?' · '+h.kcal+' kcal':''));
+  });
+  L.push('');
+  L.push('─── CORRIDAS (últimas '+Math.min(20,r.rs.length)+') ───');
+  if(!r.rs.length)L.push('(nenhuma corrida registrada)');
+  r.rs.slice(-20).reverse().forEach(function(x){
+    var pace=(x.dist>0&&x.time)?(' · ritmo '+fmtPace(x.time,Math.round(x.dist*1000))+" min/km"):'';
+    L.push(fmtBrasil(x.date)+' · '+numBR((+x.dist||0).toFixed(2))+' km · '+fmtTimer(x.time||0)+' · '+(x.kcal||0)+' kcal'+(x.bpm?' · '+x.bpm+' bpm':'')+pace);
+  });
+  L.push('');
+  L.push('— Gerado pelo FORJA · ultron-treino.vercel.app');
+  return L.join('\n');
+}
+function abrirRelatorio(){
+  var r=relatorioResumo();
+  document.getElementById('rel-preview').textContent=relatorioTexto();
+  document.getElementById('rel-resumo').textContent=r.treinos+' treino(s) · '+r.min+' min · '+r.kcal+' kcal · '+r.rs.length+' corrida(s) · '+numBR(r.km.toFixed(2))+' km';
+  document.getElementById('rel-modal').classList.add('open');
+  beep(1);
+}
+function fecharRelatorio(){document.getElementById('rel-modal').classList.remove('open')}
+function compartilharRelatorio(){
+  var txt=relatorioTexto();
+  var nome=((state.profile&&state.profile.nome)||'atleta');
+  if(navigator.share){
+    navigator.share({title:'Relatório FORJA — '+nome,text:txt}).then(function(){
+      toast('📤 Relatório enviado!',2600);
+    }).catch(function(e){
+      if(e&&e.name==='AbortError')return;
+      copiarRelatorio();
+    });
+  }else copiarRelatorio();
+}
+function copiarRelatorio(){
+  var txt=relatorioTexto();
+  var done=function(){toast('📋 Relatório copiado! Cole e envie para quem quiser.',3400);beep(1)};
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(function(){copiarFallback(txt,done)});
+  }else copiarFallback(txt,done);
+}
+function copiarFallback(txt,done){
+  try{
+    var ta=document.createElement('textarea');
+    ta.value=txt;ta.style.position='fixed';ta.style.top='-1000px';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    var okk=document.execCommand&&document.execCommand('copy');
+    document.body.removeChild(ta);
+    if(okk)done();else toast('⚠️ Não consegui copiar — use "Salvar .txt"',3600);
+  }catch(e){toast('⚠️ Não consegui copiar — use "Salvar .txt"',3600)}
+}
+function salvarRelatorioTxt(){
+  var blob=new Blob([relatorioTexto()],{type:'text/plain;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='forja-relatorio-'+fmtDate(new Date())+'.txt';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(a.href)},4000);
+  toast('💾 Relatório salvo em Downloads!',3400);
+  beep(1);
+}
+function relatorioPDF(){
+  var p=state.profile||{},r=relatorioResumo();
+  var rowsH=r.hs.slice(-20).reverse().map(function(h){
+    return '<tr><td>'+fmtBrasil(h.date)+'</td><td>'+esc(h.nome)+'</td><td>'+(h.min||0)+' min</td><td>'+(h.ex||0)+'</td><td>'+(h.kcal||0)+' kcal</td></tr>';
+  }).join('');
+  var rowsR=r.rs.slice(-20).reverse().map(function(x){
+    return '<tr><td>'+fmtBrasil(x.date)+'</td><td>'+(+x.dist||0).toFixed(2)+' km</td><td>'+fmtTimer(x.time||0)+'</td><td>'+(x.kcal||0)+' kcal</td><td>'+(x.bpm||'—')+'</td></tr>';
+  }).join('');
+  document.getElementById('print-area').innerHTML=
+   '<h2 style="margin-bottom:2px">🔥 FORJA — Relatório de Progresso</h2>'+
+   '<div style="color:#555;margin-bottom:14px">Gerado em '+fmtBrasil(fmtDate(new Date()))+'</div>'+
+   '<h3>Aluno</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse">'+
+   [['Nome',p.nome||'—'],['Idade',(p.idade||'—')],['Sexo',p.sexo||'—'],['Altura',(p.alt?p.alt+' cm':'—')],['Peso',(p.peso?p.peso+' kg':'—')],['Objetivo',p.goal||'—'],['Treinos',String(r.treinos)],['Minutos',String(r.min)],['Calorias',String(r.kcal)+' kcal'],['Corridas',String(r.rs.length)+' ('+r.km.toFixed(2)+' km)'],['Sequência',String(r.streak)+' dia(s)']].map(function(kv){return '<tr><td>'+kv[0]+'</td><td>'+kv[1]+'</td></tr>'}).join('')+'</table>'+
+   '<h3 style="margin-top:14px">Treinos</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse"><tr><th>Data</th><th>Treino</th><th>Duração</th><th>Exercícios</th><th>Calorias</th></tr>'+(rowsH||'<tr><td colspan="5">sem treinos</td></tr>')+'</table>'+
+   '<h3 style="margin-top:14px">Corridas</h3><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse"><tr><th>Data</th><th>Distância</th><th>Tempo</th><th>Calorias</th><th>BPM</th></tr>'+(rowsR||'<tr><td colspan="5">sem corridas</td></tr>')+'</table>';
+  setTimeout(function(){window.print()},120);
+}
+
+/* ================== APAGAR HISTÓRICO ================== */
+function abrirApagarHist(){
+  var r=relatorioResumo();
+  document.getElementById('del-info').textContent='Serão apagados: '+r.treinos+' treino(s), '+r.rs.length+' corrida(s), '+r.min+' min, '+r.kcal+' kcal e '+r.streak+' dia(s) de sequência.';
+  document.getElementById('del-modal').classList.add('open');
+}
+function fecharApagarHist(){document.getElementById('del-modal').classList.remove('open')}
+function apagarHistorico(){
+  state.history=[];
+  state.runs=[];
+  state.streak=0;
+  state.lastDate=null;
+  state.totalMin=0;
+  state.kcalTotal=0;
+  state.unlocked=[];
+  save();
+  renderHome();renderHist();renderConq();renderRuns();renderKcalWeek();checkConquistas();save();
+  fecharApagarHist();
+  toast('🗑 Histórico apagado. Tudo certo!',3200);
+  beep(1);
 }
 function renderConq(){
   document.getElementById('conq-list').innerHTML=CONQUISTAS.map(function(c){
@@ -1602,7 +1785,7 @@ function encerrarCorrida(){
       RK.map.fitBounds(RK.line.getBounds(),{padding:[28,28]});
     }
     showRunSummary(s,dist,kcal,hAvg);
-    renderHome();renderRuns();renderKcalWeek();
+    renderHome();renderRuns();renderKcalWeek();renderHist();
   } else toast('Corrida muito curta para registrar.');
   corridaReset();
 }
@@ -1741,6 +1924,7 @@ function go(v){
   document.getElementById('view-'+v).classList.add('active');
   window.scrollTo(0,0);
   if(v==='corrida'){initCorrida();renderRuns()}
+  if(v==='hist')renderHist();
   var bw=document.getElementById('bk-when');
   if(bw)bw.textContent=backupInfo();
 }
